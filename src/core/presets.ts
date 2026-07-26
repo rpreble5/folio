@@ -66,7 +66,9 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       'Pitch maps straight onto keyboard geometry, so what you see is where your hands go. Length is duration. The clearest first read for a complete beginner.',
     layout: { ...baseLayout },
     encodings: {
-      palette: 'spectral',
+      // Fifths rather than spectral: semitone neighbours are adjacent rows on a
+      // roll, so they need the *most* colour distance, not the least.
+      palette: 'fifths',
       shapeSet: 'capsule',
       label: 'none',
       labelScale: 1,

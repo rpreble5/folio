@@ -283,6 +283,12 @@ button {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
 }
 
+/* Colour carries far more options than shape or text, so it gets the room
+   rather than forcing its tiles to wrap into a fourth row. */
+.columns--notes {
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1.05fr);
+}
+
 .group {
   display: flex;
   flex-direction: column;
@@ -557,6 +563,26 @@ button {
   height: 15px;
   border-radius: 2.5px;
   display: block;
+}
+
+/* All twelve at once, so the ordering is legible rather than described. */
+.palette-tile {
+  width: 118px;
+  gap: 7px;
+  padding: 9px;
+}
+
+.tile__swatches--strip {
+  gap: 1.5px;
+  padding: 3px;
+}
+
+.tile__swatches--strip i {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 13px;
+  border-radius: 2px;
 }
 
 .tile__shapes {

@@ -231,22 +231,30 @@ function NotesTab() {
   const shapeSet = SHAPE_SETS.find((s) => s.id === theme.encodings.shapeSet)
 
   return (
-    <div className="columns columns--3">
+    <div className="columns columns--3 columns--notes">
       <Group label="Colour">
         <div className="tiles">
           {PALETTES.map((p) => (
             <Tile
               key={p.id}
+              className="palette-tile"
               selected={theme.encodings.palette === p.id}
               onClick={() => patchEncodings({ palette: p.id })}
               title={p.note}
             >
-              <div className="tile__swatches" style={{ background: theme.surface.background }}>
-                {spread(p.colors, theme.surface.text)
-                  .slice(0, 4)
-                  .map((color, i) => (
-                    <i key={i} style={{ background: color }} />
-                  ))}
+              {/* Every colour, in pitch order. A palette whose hues follow
+                  pitch reads here as a gradient; one ordered by fifths reads
+                  as a scatter — which is exactly the difference that matters. */}
+              <div
+                className="tile__swatches tile__swatches--strip"
+                style={{ background: theme.surface.background }}
+              >
+                {p.colors.map((color, i) => (
+                  <i
+                    key={i}
+                    style={{ background: color === '@ink' ? theme.surface.text : color }}
+                  />
+                ))}
               </div>
               <div className="tile__name">{p.name}</div>
             </Tile>
