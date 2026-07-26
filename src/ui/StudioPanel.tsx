@@ -381,14 +381,18 @@ function PageTab() {
             onChange={(laneHeight) => patchLayout({ laneHeight })}
           />
         </Field>
-        <Field name="Time" value={`${layout.beatWidth}`}>
+        {/* Bars per line rather than pixels per beat: it is what you actually
+            mean, and a line always fills the page either way. */}
+        <Field
+          name="Bars per line"
+          value={layout.barsPerSystem > 0 ? `${layout.barsPerSystem}` : 'Auto'}
+        >
           <Slider
-            label="Time spacing"
-            min={30}
-            max={190}
-            step={2}
-            value={layout.beatWidth}
-            onChange={(beatWidth) => patchLayout({ beatWidth })}
+            label="Bars per line"
+            min={0}
+            max={12}
+            value={layout.barsPerSystem}
+            onChange={(barsPerSystem) => patchLayout({ barsPerSystem })}
           />
         </Field>
         <Field name="Between lines" value={`${layout.systemGap}`}>

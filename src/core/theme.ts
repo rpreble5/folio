@@ -128,7 +128,14 @@ export interface ResolvedStyle {
 export interface LayoutConfig {
   mode: LayoutMode
   pitchAxis: PitchAxis
-  /** Horizontal pixels per quarter note. */
+  /**
+   * How many bars fill one line. Zero means auto, which picks whichever count
+   * lands nearest {@link beatWidth}. Pixels-per-beat is always derived from
+   * this and the width available, never set directly — that is what keeps a
+   * line spanning the full page.
+   */
+  barsPerSystem: number
+  /** Preferred horizontal pixels per quarter note. Only a target, used by auto. */
   beatWidth: number
   /** Vertical pixels per unit of the pitch axis. */
   laneHeight: number

@@ -38,6 +38,7 @@ export const PAPER_SURFACE: Surface = {
 const baseLayout = {
   mode: 'roll' as const,
   pitchAxis: 'keyboard' as const,
+  barsPerSystem: 0,
   beatWidth: 84,
   laneHeight: 15,
   noteGap: 2,

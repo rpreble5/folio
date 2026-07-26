@@ -107,6 +107,31 @@ function axisPositionForMidi(midi: number, theme: Theme): number {
 const BASS_STAFF = [18, 20, 22, 24, 26]
 const TREBLE_STAFF = [30, 32, 34, 36, 38]
 
+/** Beyond this, bars get too narrow to read whatever the screen. */
+const MAX_BARS_PER_SYSTEM = 16
+
+/**
+ * The bar length to scale by. Mixed-meter scores would otherwise give each
+ * system its own scale, so the most frequent length wins and the odd bars run
+ * long or short — which is what a reader expects a 5/4 bar to do anyway.
+ */
+function commonBarLength(measures: Measure[]): number {
+  const counts = new Map<number, number>()
+  for (const m of measures) {
+    const length = Math.round((m.endBeat - m.startBeat) * 1000) / 1000
+    counts.set(length, (counts.get(length) ?? 0) + 1)
+  }
+  let best = 4
+  let bestCount = 0
+  for (const [length, count] of counts) {
+    if (count > bestCount && length > 0) {
+      best = length
+      bestCount = count
+    }
+  }
+  return best
+}
+
 function buildMeasures(score: Score): Measure[] {
   const measures: Measure[] = []
   let beat = 0
@@ -161,36 +186,48 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
   const yFor = (pos: number) => (axisMax - pos) * laneHeight
 
   // --- Horizontal wrapping -------------------------------------------------
+  //
+  // Bars per line is decided first, then pixels-per-beat is derived from the
+  // width available. Doing it the other way round — packing whatever fits at a
+  // fixed scale — leaves a ragged strip of dead space whenever the next bar
+  // does not quite fit.
+  //
+  // The scale is global rather than per-system on purpose. Justifying each line
+  // separately, as text does, would draw a half note wider on a three-bar line
+  // than on a four-bar line. Length *is* duration here, so that would make the
+  // encoding lie.
   const measures = buildMeasures(score)
-  const beatWidth = cfg.beatWidth
+  const barBeats = commonBarLength(measures)
+
+  const barsPerSystem = Math.max(
+    1,
+    Math.min(
+      MAX_BARS_PER_SYSTEM,
+      cfg.barsPerSystem > 0
+        ? cfg.barsPerSystem
+        : // Auto: whatever count lands nearest the preset's preferred spacing.
+          Math.round(contentWidth / Math.max(1, cfg.beatWidth * barBeats)) || 1,
+    ),
+  )
+
+  const beatWidth = Math.max(
+    6,
+    Math.min(600, contentWidth / Math.max(0.25, barsPerSystem * barBeats)),
+  )
 
   const systems: System[] = []
-  let current: Measure[] = []
-  let currentWidth = 0
-
-  const flush = () => {
-    if (current.length === 0) return
+  for (let i = 0; i < measures.length; i += barsPerSystem) {
+    const chunk = measures.slice(i, i + barsPerSystem)
     systems.push({
       index: systems.length,
-      startBeat: current[0].startBeat,
-      endBeat: current[current.length - 1].endBeat,
+      startBeat: chunk[0].startBeat,
+      endBeat: chunk[chunk.length - 1].endBeat,
       top: 0,
       height: 0,
       notes: [],
       measures: [],
     })
-    current = []
-    currentWidth = 0
   }
-
-  for (const measure of measures) {
-    const width = (measure.endBeat - measure.startBeat) * beatWidth
-    // Always take at least one measure, however narrow the viewport gets.
-    if (current.length > 0 && currentWidth + width > contentWidth) flush()
-    current.push(measure)
-    currentWidth += width
-  }
-  flush()
 
   // --- Place measures and notes -------------------------------------------
   const measureBySystem = new Map<number, Measure[]>()
@@ -281,17 +318,10 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
     ? systems[systems.length - 1].top + systemInnerHeight + 20
     : systemInnerHeight + 40
 
-  // Hug the widest system rather than the full available width. A measure only
-  // ever wraps in whole bars, so the leftover strip would otherwise sit inside
-  // the score's own surface as dead space — and defeat centring it.
-  const usedWidth = systems.reduce(
-    (max, s) => Math.max(max, (s.endBeat - s.startBeat) * beatWidth),
-    0,
-  )
-
   return {
     systems,
-    width: gutter + Math.max(usedWidth, 160) + rightPad,
+    // A full line now spans contentWidth exactly, so the page is the section.
+    width: gutter + contentWidth + rightPad,
     height,
     gutter,
     laneHeight,
