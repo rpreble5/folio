@@ -6,16 +6,21 @@ import { beatToSeconds, secondsToBeat } from './core/types'
 import { layoutScore } from './render/layout'
 import { ScoreView } from './render/ScoreView'
 import { Library } from './ui/Library'
-import { StyleStudio } from './ui/StyleStudio'
+import { StudioPanel } from './ui/StudioPanel'
+import { NotePopover } from './ui/NotePopover'
 import { Transport } from './ui/Transport'
+import { Pills } from './ui/controls'
 import { player } from './audio/player'
 import './styles/app.css'
+
+const POPOVER_WIDTH = 268
+const POPOVER_HEIGHT = 380
+const EDGE = 14
 
 export default function App() {
   const screen = useStore((s) => s.screen)
   const score = useStore((s) => s.score)
   const theme = useStore((s) => s.theme)
-  const studioOpen = useStore((s) => s.studioOpen)
   const playing = useStore((s) => s.playing)
   const playheadBeat = useStore((s) => s.playheadBeat)
   const tempoScale = useStore((s) => s.tempoScale)
@@ -24,7 +29,6 @@ export default function App() {
   const toast = useStore((s) => s.toast)
 
   const setScreen = useStore((s) => s.setScreen)
-  const setStudioOpen = useStore((s) => s.setStudioOpen)
   const setPlaying = useStore((s) => s.setPlaying)
   const setPlayhead = useStore((s) => s.setPlayhead)
   const selectNote = useStore((s) => s.selectNote)
@@ -32,25 +36,24 @@ export default function App() {
   const showToast = useStore((s) => s.showToast)
   const setImportError = useStore((s) => s.setImportError)
 
-  const canvasRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const [canvasWidth, setCanvasWidth] = useState(900)
+  const [stageWidth, setStageWidth] = useState(900)
+  const [popover, setPopover] = useState<{ x: number; y: number } | null>(null)
 
-  // --- Measure the canvas so layout can wrap to the real viewport ----------
+  // --- Measure the stage so layout wraps to the real width -----------------
   useLayoutEffect(() => {
-    const element = canvasRef.current
+    const element = stageRef.current
     if (!element) return
-    const observer = new ResizeObserver(([entry]) => {
-      setCanvasWidth(entry.contentRect.width)
-    })
+    const observer = new ResizeObserver(([entry]) => setStageWidth(entry.contentRect.width))
     observer.observe(element)
-    setCanvasWidth(element.clientWidth)
+    setStageWidth(element.clientWidth)
     return () => observer.disconnect()
   }, [screen])
 
   const layout = useMemo(
-    () => layoutScore(score, theme, canvasWidth),
-    [score, theme, canvasWidth],
+    () => layoutScore(score, theme, stageWidth),
+    [score, theme, stageWidth],
   )
 
   // --- Playback ------------------------------------------------------------
@@ -60,8 +63,7 @@ export default function App() {
     let frame = 0
     let cancelled = false
     const startBeat = useStore.getState().playheadBeat
-    // Musical position of the start point, resolved once — the tempo map does
-    // not change mid-run, so there is no reason to re-walk it every frame.
+    // Resolved once — the tempo map does not change mid-run.
     const originSeconds = beatToSeconds(score, startBeat)
 
     void player.unlock().then(() => {
@@ -73,8 +75,8 @@ export default function App() {
       })
 
       const tick = () => {
-        // player.elapsed() is wall clock; multiplying by tempoScale converts it
-        // back to score time, since play() divided by the same factor.
+        // elapsed() is wall clock; scaling by tempoScale converts back to score
+        // time, since play() divided by the same factor when scheduling.
         const musicalSeconds = originSeconds + player.elapsed() * tempoScale
         setPlayhead(Math.min(secondsToBeat(score, musicalSeconds), score.length))
         frame = requestAnimationFrame(tick)
@@ -87,12 +89,11 @@ export default function App() {
       cancelAnimationFrame(frame)
       player.stop()
     }
-    // playheadBeat is read once at start on purpose — including it would restart
-    // playback on every frame.
+    // playheadBeat is read once at start on purpose; including it would restart
+    // playback every frame.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, score, tempoScale])
 
-  // --- Which notes are sounding right now ---------------------------------
   const activeIds = useMemo(() => {
     if (!playing) return new Set<string>()
     const ids = new Set<string>()
@@ -106,26 +107,23 @@ export default function App() {
 
   // --- Follow the playhead down the page ----------------------------------
   useEffect(() => {
-    if (!playing || !canvasRef.current) return
+    if (!playing || !stageRef.current) return
     const system = layout.systems.find(
       (s) => playheadBeat >= s.startBeat - 1e-6 && playheadBeat < s.endBeat - 1e-6,
     )
     if (!system) return
-    const canvas = canvasRef.current
-    const top = system.top
-    const bottom = top + system.height
-    const viewTop = canvas.scrollTop
-    const viewBottom = viewTop + canvas.clientHeight - 120
-    if (bottom > viewBottom || top < viewTop) {
-      canvas.scrollTo({ top: Math.max(0, top - 80), behavior: 'smooth' })
+    const stage = stageRef.current
+    const bottom = system.top + system.height
+    if (bottom > stage.scrollTop + stage.clientHeight - 24 || system.top < stage.scrollTop) {
+      stage.scrollTo({ top: Math.max(0, system.top - 40), behavior: 'smooth' })
     }
   }, [playing, playheadBeat, layout])
 
-  // --- Keyboard shortcuts --------------------------------------------------
+  // --- Keyboard ------------------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'SELECT') return
+      if (target.tagName === 'INPUT') return
 
       if (e.code === 'Space') {
         e.preventDefault()
@@ -136,18 +134,36 @@ export default function App() {
           setPlaying(true)
         }
       }
-      if (e.key === 'Escape') selectNote(null)
-      if (e.key === 's' || e.key === 'S') setStudioOpen(!studioOpen)
+      if (e.key === 'Escape') {
+        selectNote(null)
+        setPopover(null)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playing, studioOpen, setPlaying, setStudioOpen, selectNote])
+  }, [playing, setPlaying, selectNote])
 
   useEffect(() => {
     if (!toast) return
-    const timer = setTimeout(() => showToast(null), 2200)
+    const timer = setTimeout(() => showToast(null), 2400)
     return () => clearTimeout(timer)
   }, [toast, showToast])
+
+  const handleSelectNote = (id: string | null, at?: { x: number; y: number }) => {
+    selectNote(id)
+    if (!id || !at) {
+      setPopover(null)
+      return
+    }
+    // Clamp into the viewport, and flip above the click when there is no room
+    // below — otherwise the editor opens half off-screen for low notes.
+    const x = Math.min(at.x + 18, window.innerWidth - POPOVER_WIDTH - EDGE)
+    const fitsBelow = at.y + POPOVER_HEIGHT + EDGE < window.innerHeight
+    const y = fitsBelow
+      ? Math.max(EDGE, at.y - 40)
+      : Math.max(EDGE, window.innerHeight - POPOVER_HEIGHT - EDGE)
+    setPopover({ x: Math.max(EDGE, x), y })
+  }
 
   const handleImport = async (file: File | undefined) => {
     if (!file) return
@@ -164,17 +180,17 @@ export default function App() {
 
   if (screen === 'library') {
     return (
-      <div className="app">
+      <>
         <Library />
         {toast && <div className="toast">{toast}</div>}
-      </div>
+      </>
     )
   }
 
   return (
     <div className="app">
       <header className="topbar">
-        <button className="wordmark btn btn--ghost" onClick={() => setScreen('library')}>
+        <button className="wordmark" onClick={() => setScreen('library')}>
           <span className="wordmark__dot" />
           Folio
         </button>
@@ -186,19 +202,19 @@ export default function App() {
 
         <div className="topbar__spacer" />
 
-        <div className="seg">
-          {LIBRARY.slice(0, 4).map(({ score: piece }) => (
-            <button
-              key={piece.id}
-              aria-pressed={score.id === piece.id}
-              onClick={() => loadScore(piece)}
-            >
-              {piece.title}
-            </button>
-          ))}
-        </div>
+        <Pills
+          options={LIBRARY.map(({ score: piece }) => ({
+            value: piece.id,
+            label: piece.title,
+          }))}
+          value={score.id}
+          onChange={(id) => {
+            const entry = LIBRARY.find((e) => e.score.id === id)
+            if (entry) loadScore(entry.score)
+          }}
+        />
 
-        <button className="btn" onClick={() => fileInput.current?.click()}>
+        <button className="pill pill--solid" onClick={() => fileInput.current?.click()}>
           Import
         </button>
         <input
@@ -208,36 +224,26 @@ export default function App() {
           hidden
           onChange={(e) => void handleImport(e.target.files?.[0])}
         />
-
-        {!studioOpen && (
-          <button className="btn btn--primary" onClick={() => setStudioOpen(true)}>
-            Style
-          </button>
-        )}
       </header>
 
-      <div className="stage">
-        <div className="canvas" ref={canvasRef}>
-          <div className="canvas__inner">
-            <ScoreView
-              score={score}
-              theme={theme}
-              layout={layout}
-              playheadBeat={playheadBeat}
-              playing={playing}
-              activeIds={activeIds}
-              selectedId={selectedNoteId}
-              cvd={cvd}
-              onSelectNote={selectNote}
-            />
-          </div>
-        </div>
-
-        {studioOpen && <StyleStudio />}
+      <div className="stage" ref={stageRef} onClick={() => handleSelectNote(null)}>
+        <ScoreView
+          score={score}
+          theme={theme}
+          layout={layout}
+          playheadBeat={playheadBeat}
+          playing={playing}
+          activeIds={activeIds}
+          selectedId={selectedNoteId}
+          cvd={cvd}
+          onSelectNote={handleSelectNote}
+        />
       </div>
 
+      <StudioPanel />
       <Transport />
 
+      {popover && selectedNoteId && <NotePopover x={popover.x} y={popover.y} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )

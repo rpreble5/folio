@@ -1,6 +1,7 @@
 import { useStore } from '../state/store'
 import { beatToSeconds, beatsPerMeasure, timeSignatureAt } from '../core/types'
 import { player } from '../audio/player'
+import { Slider } from './controls'
 
 function formatTime(seconds: number): string {
   const total = Math.max(0, Math.round(seconds))
@@ -22,76 +23,72 @@ export function Transport() {
 
   const elapsed = beatToSeconds(score, playheadBeat) / tempoScale
   const total = beatToSeconds(score, score.length) / tempoScale
+  const bpm = Math.round((score.tempos[0]?.bpm ?? 100) * tempoScale)
 
   const toggle = () => {
     if (playing) {
       player.stop()
       setPlaying(false)
-    } else {
-      // Restart from the top if we are sitting at the end.
-      if (playheadBeat >= score.length - 1e-6) setPlayhead(0)
-      setPlaying(true)
+      return
     }
+    if (playheadBeat >= score.length - 1e-6) setPlayhead(0)
+    setPlaying(true)
   }
 
   return (
     <div className="transport">
-      <button
-        className="transport__play"
-        onClick={toggle}
-        aria-label={playing ? 'Pause' : 'Play'}
-        title={playing ? 'Pause (space)' : 'Play (space)'}
-      >
+      <button className="play" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>
         {playing ? (
-          <svg width="13" height="14" viewBox="0 0 13 14" fill="currentColor">
-            <rect x="0" y="0" width="4.5" height="14" rx="1.2" />
-            <rect x="8.5" y="0" width="4.5" height="14" rx="1.2" />
+          <svg width="11" height="13" viewBox="0 0 11 13" fill="currentColor">
+            <rect width="3.6" height="13" rx="1.1" />
+            <rect x="7.4" width="3.6" height="13" rx="1.1" />
           </svg>
         ) : (
-          <svg width="14" height="15" viewBox="0 0 14 15" fill="currentColor">
-            <path d="M1.5 1.2a1 1 0 0 1 1.52-.85l9.4 5.8a1 1 0 0 1 0 1.7l-9.4 5.8a1 1 0 0 1-1.52-.85Z" />
+          <svg width="12" height="13" viewBox="0 0 12 13" fill="currentColor">
+            <path d="M1.2 1.05a.9.9 0 0 1 1.37-.77l8.2 5.2a.9.9 0 0 1 0 1.53l-8.2 5.2a.9.9 0 0 1-1.37-.76Z" />
           </svg>
         )}
       </button>
 
       <div className="transport__scrub">
-        <input
-          type="range"
+        <Slider
+          label="Position"
           min={0}
           max={Math.max(score.length, 1)}
           step={0.05}
           value={Math.min(playheadBeat, score.length)}
-          aria-label="Position"
-          onChange={(e) => {
-            const beat = Number(e.target.value)
-            // Scrubbing while playing restarts the schedule from the new point,
-            // which the playback effect handles when it sees the beat jump.
-            if (playing) player.stop()
+          onChange={(beat) => {
+            // Scrubbing stops playback; the schedule is built once at play time,
+            // so resuming from a new point means starting a fresh one.
+            if (playing) {
+              player.stop()
+              setPlaying(false)
+            }
             setPlayhead(beat)
-            if (playing) setPlaying(false)
           }}
         />
       </div>
 
-      <div className="transport__time">
+      <div className="transport__readout">
         {formatTime(elapsed)} / {formatTime(total)}
       </div>
 
-      <div className="transport__time" style={{ minWidth: 68 }}>
-        bar {Math.min(bar, totalBars)}/{totalBars}
+      <div className="transport__readout">
+        bar {Math.min(bar, totalBars)} of {totalBars}
+      </div>
+
+      <div className="transport__readout" style={{ minWidth: 52 }}>
+        {bpm} bpm
       </div>
 
       <div className="transport__tempo">
-        <span>{Math.round((score.tempos[0]?.bpm ?? 100) * tempoScale)} bpm</span>
-        <input
-          type="range"
+        <Slider
+          label="Tempo"
           min={0.4}
           max={1.4}
           step={0.05}
           value={tempoScale}
-          aria-label="Tempo"
-          onChange={(e) => {
-            const next = Number(e.target.value)
+          onChange={(next) => {
             if (playing) {
               player.stop()
               setPlaying(false)

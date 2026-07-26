@@ -15,7 +15,8 @@ interface Props {
   activeIds: Set<string>
   selectedId: string | null
   cvd: CvdMode
-  onSelectNote: (id: string | null) => void
+  /** Coordinates come from the click so the editor can open beside the note. */
+  onSelectNote: (id: string | null, at?: { x: number; y: number }) => void
 }
 
 const BASS_STAFF = [18, 20, 22, 24, 26]
@@ -111,7 +112,7 @@ interface SystemProps {
   playing: boolean
   activeIds: Set<string>
   selectedId: string | null
-  onSelectNote: (id: string | null) => void
+  onSelectNote: (id: string | null, at?: { x: number; y: number }) => void
   yFor: (pos: number) => number
   isStaff: boolean
 }
@@ -277,7 +278,7 @@ function SystemGroup({
               key={placed.note.id}
               onClick={(e) => {
                 e.stopPropagation()
-                onSelectNote(placed.note.id)
+                onSelectNote(placed.note.id, { x: e.clientX, y: e.clientY })
               }}
               style={{ cursor: 'pointer' }}
             >

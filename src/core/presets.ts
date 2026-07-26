@@ -9,15 +9,19 @@
 
 import type { Surface, Theme } from './theme'
 
+/**
+ * The score's dark page sits a shade *lighter* than the app's ground, so it
+ * reads as an object resting on a desk rather than a hole cut in the screen.
+ */
 export const DARK_SURFACE: Surface = {
-  background: '#0d0f14',
-  panel: '#151922',
-  grid: '#1a1f2a',
-  gridStrong: '#2b3444',
-  text: '#e8ecf5',
-  muted: '#8b95a8',
-  accent: '#7c9cff',
-  staffLine: '#333d50',
+  background: '#1b1e23',
+  panel: '#22262c',
+  grid: '#212429',
+  gridStrong: '#2f343c',
+  text: '#e8eaee',
+  muted: '#7a828c',
+  accent: '#ece6da',
+  staffLine: '#363b44',
 }
 
 export const PAPER_SURFACE: Surface = {
@@ -27,7 +31,7 @@ export const PAPER_SURFACE: Surface = {
   gridStrong: '#d3d8e3',
   text: '#151a23',
   muted: '#6b7385',
-  accent: '#3355dd',
+  accent: '#2b3038',
   staffLine: '#aab2c4',
 }
 

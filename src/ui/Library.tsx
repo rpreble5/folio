@@ -6,13 +6,13 @@ import { pitchClass } from '../core/pitch'
 import { useStore } from '../state/store'
 import type { Score } from '../core/types'
 
-/** A few bars of the actual piece, coloured — enough to hint at what opens. */
+/** A few bars of the real piece, coloured — a hint at what opens. */
 function Thumb({ score }: { score: Score }) {
   const palette = getPalette('spectral')
-  const sample = score.notes.slice(0, 22)
-  const lows = Math.min(...sample.map((n) => n.midi))
-  const highs = Math.max(...sample.map((n) => n.midi))
-  const span = Math.max(1, highs - lows)
+  const sample = score.notes.slice(0, 24)
+  const low = Math.min(...sample.map((n) => n.midi))
+  const high = Math.max(...sample.map((n) => n.midi))
+  const span = Math.max(1, high - low)
 
   return (
     <div className="piece__thumb" aria-hidden="true">
@@ -20,9 +20,9 @@ function Thumb({ score }: { score: Score }) {
         <i
           key={note.id}
           style={{
-            height: `${18 + ((note.midi - lows) / span) * 76}%`,
+            height: `${20 + ((note.midi - low) / span) * 74}%`,
             background: palette.colors[pitchClass(note.midi)],
-            opacity: 0.85,
+            opacity: 0.9,
           }}
         />
       ))}
@@ -45,7 +45,7 @@ export function Library() {
     try {
       const score = await importFile(file)
       if (score.notes.length === 0) {
-        throw new Error('That file parsed, but contains no notes Folio can place.')
+        throw new Error('That file parsed, but holds no notes Folio can place.')
       }
       loadScore(score)
     } catch (error) {
@@ -60,8 +60,8 @@ export function Library() {
       <div className="library__inner">
         <h1 className="library__lede">Sheet music, in a language that suits you.</h1>
         <p className="library__sub">
-          Bring in a score and redesign how it looks — colour, shape, labels, spacing, right down
-          to a single note. Start with one of these.
+          Bring in a score and redesign how it reads — colour, shape, labels, spacing, right
+          down to a single note. Start with one of these.
         </p>
 
         <div className="library__grid">
@@ -88,19 +88,11 @@ export function Library() {
             void handleFile(e.dataTransfer.files[0])
           }}
         >
-          <div>
-            <strong>{busy ? 'Reading…' : 'Or drop your own score here'}</strong>
-          </div>
-          <div className="dropzone__hint">
-            MusicXML (.xml, .musicxml, .mxl) or MIDI (.mid) —{' '}
-            <button
-              className="btn btn--ghost"
-              style={{ padding: '0 2px', color: 'var(--accent)' }}
-              onClick={() => fileInput.current?.click()}
-            >
-              browse
-            </button>
-          </div>
+          <strong>{busy ? 'Reading…' : 'Or bring your own'}</strong>
+          Drop a MusicXML or MIDI file here, or{' '}
+          <button className="link" onClick={() => fileInput.current?.click()}>
+            choose one
+          </button>
           <input
             ref={fileInput}
             type="file"

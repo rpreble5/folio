@@ -281,9 +281,17 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
     ? systems[systems.length - 1].top + systemInnerHeight + 20
     : systemInnerHeight + 40
 
+  // Hug the widest system rather than the full available width. A measure only
+  // ever wraps in whole bars, so the leftover strip would otherwise sit inside
+  // the score's own surface as dead space — and defeat centring it.
+  const usedWidth = systems.reduce(
+    (max, s) => Math.max(max, (s.endBeat - s.startBeat) * beatWidth),
+    0,
+  )
+
   return {
     systems,
-    width: gutter + contentWidth + rightPad,
+    width: gutter + Math.max(usedWidth, 160) + rightPad,
     height,
     gutter,
     laneHeight,
