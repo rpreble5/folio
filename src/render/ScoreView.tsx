@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import type { Score } from '../core/types'
 import { diatonicIndex, keyboardPosition, octaveOf, pitchClass } from '../core/pitch'
-import type { Theme } from '../core/theme'
+import type { LineRole, LineStyle, Surface, Theme } from '../core/theme'
+import { dashArray, lineColor } from '../core/theme'
 import type { Layout, System } from './layout'
 import { NoteGlyph } from './NoteGlyph'
 import { CvdFilters, cvdFilterUrl, type CvdMode } from './cvd'
@@ -24,6 +25,16 @@ const TREBLE_STAFF = [30, 32, 34, 36, 38]
 
 const KEY_WHITE = '#eef1f7'
 const KEY_BLACK = '#171b24'
+
+/** Turn a LineStyle into the SVG stroke attributes for one line. */
+function strokeProps(line: LineStyle, role: LineRole, surface: Surface) {
+  return {
+    stroke: lineColor(line, role, surface),
+    strokeWidth: line.width,
+    strokeDasharray: dashArray(line.dash, line.width),
+    opacity: line.opacity,
+  }
+}
 
 export function ScoreView({
   score,
@@ -156,8 +167,21 @@ function SystemGroup({
             />
           ))}
 
+      {/* Anchor lines: a horizontal reference to judge pitch against. */}
+      {!isStaff && cfg.lines.anchor.show &&
+        layout.anchors.map((anchor) => (
+          <line
+            key={`anchor-${anchor.midi}`}
+            x1={layout.gutter}
+            x2={layout.gutter + systemWidth}
+            y1={anchor.y}
+            y2={anchor.y}
+            {...strokeProps(cfg.lines.anchor, 'anchor', surface)}
+          />
+        ))}
+
       {/* Staff lines */}
-      {isStaff && cfg.showStaffLines &&
+      {isStaff && cfg.lines.staff.show &&
         [...BASS_STAFF, ...TREBLE_STAFF].map((index) => (
           <line
             key={`staff-${index}`}
@@ -165,13 +189,12 @@ function SystemGroup({
             x2={layout.gutter + systemWidth}
             y1={yFor(index) + layout.noteHeight / 2}
             y2={yFor(index) + layout.noteHeight / 2}
-            stroke={surface.staffLine}
-            strokeWidth={1}
+            {...strokeProps(cfg.lines.staff, 'staff', surface)}
           />
         ))}
 
       {/* Beat grid */}
-      {cfg.showGrid &&
+      {cfg.lines.beat.show &&
         beatTicks(system.startBeat, system.endBeat).map((beat) => (
           <line
             key={`grid-${beat}`}
@@ -179,13 +202,12 @@ function SystemGroup({
             x2={layout.gutter + (beat - system.startBeat) * layout.beatWidth}
             y1={0}
             y2={layout.systemInnerHeight}
-            stroke={surface.grid}
-            strokeWidth={1}
+            {...strokeProps(cfg.lines.beat, 'beat', surface)}
           />
         ))}
 
       {/* Barlines and measure numbers */}
-      {cfg.showBarlines &&
+      {cfg.lines.bar.show &&
         system.measures.map((measure) => (
           <g key={`bar-${measure.index}`}>
             <line
@@ -193,8 +215,7 @@ function SystemGroup({
               x2={layout.gutter + measure.x}
               y1={-4}
               y2={layout.systemInnerHeight + 4}
-              stroke={surface.gridStrong}
-              strokeWidth={1.5}
+              {...strokeProps(cfg.lines.bar, 'bar', surface)}
             />
             {cfg.showMeasureNumbers && (
               <text
@@ -210,19 +231,18 @@ function SystemGroup({
             )}
           </g>
         ))}
-      {cfg.showBarlines && (
+      {cfg.lines.bar.show && (
         <line
           x1={layout.gutter + systemWidth}
           x2={layout.gutter + systemWidth}
           y1={-4}
           y2={layout.systemInnerHeight + 4}
-          stroke={surface.gridStrong}
-          strokeWidth={1.5}
+          {...strokeProps(cfg.lines.bar, 'bar', surface)}
         />
       )}
 
       {/* Ledger lines */}
-      {isStaff && cfg.showLedgerLines &&
+      {isStaff && cfg.lines.ledger.show &&
         system.notes.flatMap((placed) =>
           ledgerIndices(diatonicIndex(placed.note.spelling)).map((index) => (
             <line
@@ -231,8 +251,7 @@ function SystemGroup({
               x2={layout.gutter + placed.x + Math.max(placed.width, layout.noteHeight) + 4}
               y1={yFor(index) + layout.noteHeight / 2}
               y2={yFor(index) + layout.noteHeight / 2}
-              stroke={surface.staffLine}
-              strokeWidth={1}
+              {...strokeProps(cfg.lines.ledger, 'ledger', surface)}
             />
           )),
         )}

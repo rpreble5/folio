@@ -12,13 +12,14 @@
 
 import { useState } from 'react'
 import { useStore } from '../state/store'
-import { PRESETS } from '../core/presets'
+import { PAGES, PRESETS } from '../core/presets'
 import {
   COLOR_SOURCES,
   HUE_ORDERS,
   SHAPE_SETS,
   TONES,
   ACCIDENTAL_SHADES,
+  LIGHTNESS_SOURCES,
   buildPalette,
   hasHueShift,
   noteHue,
@@ -28,9 +29,14 @@ import {
 } from '../core/palettes'
 import { HueWheel } from './HueWheel'
 import {
+  ANCHOR_OPTIONS,
+  DASH_KINDS,
   OUTLINE_TARGETS,
   describeSelector,
+  makeSurface,
   type LabelKind,
+  type LineRole,
+  type LineStyle,
   type OutlineWhat,
 } from '../core/theme'
 import { CVD_MODES, type CvdMode } from '../render/cvd'
@@ -335,6 +341,34 @@ function ColourTab() {
                 />
               </Field>
 
+        {/* Hue and brightness are not read the same way: colours differing in
+            hue but not brightness resolve slowly, because the fast achromatic
+            part of vision cannot see the difference. A palette with perfectly
+            even lightness looks immaculate and gives that channel nothing. */}
+        <Field name="Brightness follows">
+          <Pills
+            options={LIGHTNESS_SOURCES.map((l) => ({ value: l.id, label: l.label }))}
+            value={color.lightnessBy}
+            onChange={(lightnessBy) => patchColor({ lightnessBy })}
+          />
+        </Field>
+
+        {color.lightnessBy !== 'none' && (
+          <Field
+            name="Brightness spread"
+            value={`${Math.round(color.lightnessSpread * 100)}%`}
+          >
+            <Slider
+              label="Brightness spread"
+              min={0.04}
+              max={0.34}
+              step={0.02}
+              value={color.lightnessSpread}
+              onChange={(lightnessSpread) => patchColor({ lightnessSpread })}
+            />
+          </Field>
+        )}
+
         <Field name="Rotate all" value={`${color.rotate}°`}>
             <Slider
               label="Rotate hue"
@@ -505,9 +539,26 @@ function MarksTab() {
 function PageTab() {
   const theme = useStore((s) => s.theme)
   const patchLayout = useStore((s) => s.patchLayout)
-  const setSurfaceMode = useStore((s) => s.setSurfaceMode)
+  const setPage = useStore((s) => s.setPage)
   const { layout } = theme
   const isRoll = layout.mode === 'roll'
+
+  const patchLine = (role: LineRole, patch: Partial<LineStyle>) =>
+    patchLayout({ lines: { ...layout.lines, [role]: { ...layout.lines[role], ...patch } } })
+
+  // Only the lines this notation actually draws, so the editor never offers a
+  // control with nothing behind it.
+  const roles: { role: LineRole; label: string }[] = isRoll
+    ? [
+        { role: 'beat', label: 'Beat lines' },
+        { role: 'bar', label: 'Barlines' },
+        { role: 'anchor', label: 'Anchor lines' },
+      ]
+    : [
+        { role: 'staff', label: 'Staff lines' },
+        { role: 'bar', label: 'Barlines' },
+        { role: 'ledger', label: 'Ledger lines' },
+      ]
 
   return (
     <div className="columns columns--3">
@@ -522,14 +573,20 @@ function PageTab() {
             value={layout.mode}
             onChange={(mode) =>
               patchLayout({
-                mode,
                 // A staff is diatonic by definition, and a roll on a diatonic
                 // axis would hide every accidental's height.
+                mode,
                 pitchAxis: mode === 'staff' ? 'diatonic' : 'keyboard',
-                showStaffLines: mode === 'staff',
-                showLedgerLines: mode === 'staff',
                 showKeyboard: mode === 'roll',
                 showBlackKeyRows: mode === 'roll',
+                lines:
+                  mode === 'staff'
+                    ? { ...layout.lines, staff: { ...layout.lines.staff, show: true },
+                        ledger: { ...layout.lines.ledger, show: true },
+                        beat: { ...layout.lines.beat, show: false } }
+                    : { ...layout.lines, staff: { ...layout.lines.staff, show: false },
+                        ledger: { ...layout.lines.ledger, show: false },
+                        beat: { ...layout.lines.beat, show: true } },
               })
             }
           />
@@ -549,20 +606,6 @@ function PageTab() {
           </Field>
         )}
 
-        <Field name="Page">
-          <Pills
-            fill
-            options={[
-              { value: 'dark', label: 'Dark' },
-              { value: 'paper', label: 'Paper' },
-            ]}
-            value={theme.surface.background === '#f7f8fb' ? 'paper' : 'dark'}
-            onChange={setSurfaceMode}
-          />
-        </Field>
-      </Group>
-
-      <Group label="Spacing">
         <Field name="Note height" value={`${layout.laneHeight}`}>
           <Slider
             label="Note height"
@@ -572,8 +615,6 @@ function PageTab() {
             onChange={(laneHeight) => patchLayout({ laneHeight })}
           />
         </Field>
-        {/* Bars per line rather than pixels per beat: it is what you actually
-            mean, and a line always fills the page either way. */}
         <Field
           name="Bars per line"
           value={layout.barsPerSystem > 0 ? `${layout.barsPerSystem}` : 'Auto'}
@@ -597,17 +638,86 @@ function PageTab() {
         </Field>
       </Group>
 
-      <Group label="Show">
-        <Switch
-          label="Beat gridlines"
-          checked={layout.showGrid}
-          onChange={(showGrid) => patchLayout({ showGrid })}
-        />
-        <Switch
-          label="Barlines"
-          checked={layout.showBarlines}
-          onChange={(showBarlines) => patchLayout({ showBarlines })}
-        />
+      <Group label="Lines">
+        {isRoll && (
+          <Field name="Anchor on">
+            {/* Judging a mark against a line is far more precise than judging it
+                in empty space, so a roll with no horizontal reference makes
+                pitch needlessly hard to read. */}
+            <Pills
+              options={ANCHOR_OPTIONS.map((a) => ({ value: a.id, label: a.label }))}
+              value={layout.anchorOn}
+              onChange={(anchorOn) => patchLayout({ anchorOn })}
+            />
+          </Field>
+        )}
+
+        {roles.map(({ role, label }) => {
+          const style = layout.lines[role]
+          return (
+            <div className="line-editor" key={role}>
+              <Switch
+                label={label}
+                checked={style.show}
+                onChange={(show) => patchLine(role, { show })}
+              />
+              {style.show && (
+                <div className="line-editor__body">
+                  <Pills
+                    options={DASH_KINDS.map((d) => ({ value: d.id, label: d.label }))}
+                    value={style.dash}
+                    onChange={(dash) => patchLine(role, { dash })}
+                  />
+                  <div className="line-editor__sliders">
+                    <Field name="Weight" value={style.width.toFixed(1)}>
+                      <Slider
+                        label={`${label} weight`}
+                        min={0.5}
+                        max={5}
+                        step={0.25}
+                        value={style.width}
+                        onChange={(width) => patchLine(role, { width })}
+                      />
+                    </Field>
+                    <Field name="Strength" value={`${Math.round(style.opacity * 100)}%`}>
+                      <Slider
+                        label={`${label} strength`}
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={style.opacity}
+                        onChange={(opacity) => patchLine(role, { opacity })}
+                      />
+                    </Field>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </Group>
+
+      <Group label="Page">
+        <div className="tiles">
+          {PAGES.map((page) => (
+            <Tile
+              key={page.id}
+              className="page-tile"
+              selected={theme.surface.background.toLowerCase() === page.color.toLowerCase()}
+              onClick={() => setPage(page.color)}
+              title={page.name}
+            >
+              {/* The rest of the surface is derived from the page colour, so the
+                  swatch previews its own grid and text too. */}
+              <span className="page-tile__swatch" style={{ background: page.color }}>
+                <i style={{ background: makeSurface(page.color).gridStrong }} />
+                <i style={{ background: makeSurface(page.color).text }} />
+              </span>
+              <span className="tile__name">{page.name}</span>
+            </Tile>
+          ))}
+        </div>
+
         <Switch
           label="Bar numbers"
           checked={layout.showMeasureNumbers}

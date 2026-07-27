@@ -13,9 +13,11 @@
 
 import type { KeyMark, NoteEvent, Score } from '../core/types'
 import { beatsPerMeasure, keyAt, timeSignatureAt } from '../core/types'
-import { diatonicIndex, isBlackKey, keyboardPosition } from '../core/pitch'
+import { diatonicIndex, isBlackKey, keyboardPosition, pitchClass, tonicOf } from '../core/pitch'
 import type { ResolvedStyle, Theme } from '../core/theme'
 import { resolveStyle } from '../core/theme'
+
+const NOTE_LETTERS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 
 export interface PlacedNote {
   note: NoteEvent
@@ -63,6 +65,13 @@ export interface KeyRow {
   midi: number
 }
 
+/** A heavy reference line the eye can measure pitch against. */
+export interface AnchorLine {
+  y: number
+  midi: number
+  label: string
+}
+
 export interface Layout {
   systems: System[]
   width: number
@@ -75,6 +84,7 @@ export interface Layout {
   axisMax: number
   staffLines: StaffLine[]
   keyRows: KeyRow[]
+  anchors: AnchorLine[]
   beatWidth: number
   systemInnerHeight: number
 }
@@ -289,7 +299,7 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
 
   // --- Backdrop ------------------------------------------------------------
   const staffLines: StaffLine[] = []
-  if (isStaff && cfg.showStaffLines) {
+  if (isStaff && cfg.lines.staff.show) {
     for (const index of [...BASS_STAFF, ...TREBLE_STAFF]) {
       staffLines.push({ y: yFor(index) + noteHeight / 2, strong: false })
     }
@@ -314,6 +324,22 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
     }
   }
 
+  // Anchor lines: one per octave at C, or on the key's tonic. Judging a mark
+  // against a line is far more precise than judging it in empty space, so a
+  // roll without any horizontal reference makes pitch needlessly hard to read.
+  const anchors: AnchorLine[] = []
+  if (!isStaff && cfg.anchorOn !== 'none') {
+    const target = cfg.anchorOn === 'tonic' ? tonicOf(keyAt(score, 0)) : 0
+    for (const row of keyRows) {
+      if (pitchClass(row.midi) !== target) continue
+      anchors.push({
+        y: row.y + noteHeight / 2,
+        midi: row.midi,
+        label: `${NOTE_LETTERS[target]}${Math.floor(row.midi / 12) - 1}`,
+      })
+    }
+  }
+
   const height = systems.length
     ? systems[systems.length - 1].top + systemInnerHeight + 20
     : systemInnerHeight + 40
@@ -330,6 +356,7 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
     axisMax,
     staffLines,
     keyRows,
+    anchors,
     beatWidth,
     systemInnerHeight,
   }

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Score } from '../core/types'
 import type { LabelKind, Rule, Selector, StyleDecl, Theme } from '../core/theme'
-import { cloneTheme, newRuleId } from '../core/theme'
+import { cloneTheme, makeSurface, newRuleId } from '../core/theme'
 import { PRESETS, getPreset } from '../core/presets'
 import { LIBRARY } from '../core/library'
 import type { CvdMode } from '../render/cvd'
@@ -63,6 +63,8 @@ interface State {
   patchLayout: (patch: Partial<Theme['layout']>) => void
   patchEncodings: (patch: Partial<Theme['encodings']>) => void
   setSurfaceMode: (mode: 'dark' | 'paper') => void
+  /** Any colour can be a page; the rest of the surface derives from it. */
+  setPage: (background: string) => void
   setLabel: (label: LabelKind) => void
 
   addRule: (selector: Selector, style: StyleDecl) => void
@@ -144,6 +146,9 @@ export const useStore = create<State>((set, get) => ({
       theme: { ...s.theme, surface: { ...(mode === 'dark' ? DARK : PAPER) } },
       dirty: true,
     })),
+
+  setPage: (background) =>
+    set((s) => ({ theme: { ...s.theme, surface: makeSurface(background) }, dirty: true })),
 
   setLabel: (label) =>
     set((s) => ({

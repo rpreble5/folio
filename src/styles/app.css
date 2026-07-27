@@ -1192,3 +1192,58 @@ button {
     font-size: 26px;
   }
 }
+
+/* ----------------------------------------------------------- line editor -- */
+
+.line-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.line-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 10px 12px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  animation: panel-in var(--dur-fast) var(--ease);
+}
+
+/* Weight and strength side by side — they are read together. */
+.line-editor__sliders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.page-tile {
+  min-width: 78px;
+  gap: 8px;
+  padding: 9px;
+}
+
+/* The swatch previews the derived grid and text, not just the page colour,
+   since those follow from it. */
+.page-tile__swatch {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 5px;
+}
+
+.page-tile__swatch i {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  display: block;
+}
+
+.page-tile__swatch i:last-child {
+  height: 8px;
+  width: 8px;
+  border-radius: 50%;
+}

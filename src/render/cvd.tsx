@@ -10,16 +10,27 @@
  * severity, which is the standard model browsers and design tools use.
  */
 
-export type CvdMode = 'none' | 'protanopia' | 'deuteranopia' | 'tritanopia'
+export type CvdMode = 'none' | 'greyscale' | 'protanopia' | 'deuteranopia' | 'tritanopia'
 
 export const CVD_MODES: { id: CvdMode; label: string; note: string }[] = [
   { id: 'none', label: 'Normal', note: 'No simulation' },
+  {
+    id: 'greyscale',
+    label: 'Brightness only',
+    note: 'Strips hue, leaving what the fast, achromatic part of vision sees. If the page goes flat, nothing survives for a quick glance.',
+  },
   { id: 'protanopia', label: 'Protanopia', note: 'Red-blind — about 1% of men' },
   { id: 'deuteranopia', label: 'Deuteranopia', note: 'Green-blind — the most common, about 6% of men' },
   { id: 'tritanopia', label: 'Tritanopia', note: 'Blue-blind — rare, affects all genders equally' },
 ]
 
 const MATRICES: Record<Exclude<CvdMode, 'none'>, number[]> = {
+  // Rec. 709 luma, replicated across all three channels.
+  greyscale: [
+    0.2126, 0.7152, 0.0722,
+    0.2126, 0.7152, 0.0722,
+    0.2126, 0.7152, 0.0722,
+  ],
   protanopia: [
     0.152286, 1.052583, -0.204868,
     0.114503, 0.786281, 0.099216,

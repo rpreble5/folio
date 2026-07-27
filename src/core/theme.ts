@@ -9,6 +9,7 @@
 
 import type { Hand, KeyMark, NoteEvent } from './types'
 import { degreeLabel, noteName, octaveOf, pitchClass, scaleDegree, solfege } from './pitch'
+import { lightnessOf, shiftLightness, withLightness } from './oklch'
 import {
   type ColorConfig,
   type ShapeKind,
@@ -16,6 +17,7 @@ import {
   colorFor,
   getShapeSet,
   isNatural,
+  lightnessDelta,
   onColorFor,
   shapeFor,
 } from './palettes'
@@ -130,6 +132,64 @@ export interface ResolvedStyle {
 // Theme
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Lines
+// ---------------------------------------------------------------------------
+
+export type DashKind = 'solid' | 'dotted' | 'dashed' | 'long'
+
+export const DASH_KINDS: { id: DashKind; label: string }[] = [
+  { id: 'solid', label: 'Solid' },
+  { id: 'dotted', label: 'Dotted' },
+  { id: 'dashed', label: 'Dashed' },
+  { id: 'long', label: 'Long' },
+]
+
+/** SVG dash pattern, scaled by the line's own width so it stays proportionate. */
+export function dashArray(kind: DashKind, width: number): string | undefined {
+  const w = Math.max(0.5, width)
+  switch (kind) {
+    case 'solid':
+      return undefined
+    case 'dotted':
+      return `${w} ${w * 2.5}`
+    case 'dashed':
+      return `${w * 4} ${w * 3}`
+    case 'long':
+      return `${w * 10} ${w * 4}`
+  }
+}
+
+export interface LineStyle {
+  show: boolean
+  width: number
+  dash: DashKind
+  opacity: number
+  /** '@auto' derives from the page, so a line follows a page colour change. */
+  color: string
+}
+
+export type LineRole = 'beat' | 'bar' | 'staff' | 'ledger' | 'anchor'
+
+export type LineSet = Record<LineRole, LineStyle>
+
+/**
+ * Which pitches get a heavier reference line across the page.
+ *
+ * Aligning a mark to a line is far more precise than judging its height in
+ * empty space, so a roll without any horizontal reference makes pitch hard to
+ * read. One strong line per octave gives the eye somewhere to measure from,
+ * and the rest of the grid can stay faint because that precision survives very
+ * low contrast.
+ */
+export type AnchorOn = 'none' | 'octave' | 'tonic'
+
+export const ANCHOR_OPTIONS: { id: AnchorOn; label: string }[] = [
+  { id: 'none', label: 'None' },
+  { id: 'octave', label: 'Every C' },
+  { id: 'tonic', label: 'Key note' },
+]
+
 export interface LayoutConfig {
   mode: LayoutMode
   pitchAxis: PitchAxis
@@ -149,13 +209,11 @@ export interface LayoutConfig {
   cornerRadius: number
   systemGap: number
   showKeyboard: boolean
-  showGrid: boolean
-  showBarlines: boolean
   showMeasureNumbers: boolean
-  showStaffLines: boolean
-  showLedgerLines: boolean
   /** Draw a faint band behind the black-key rows. Helps orient on a roll. */
   showBlackKeyRows: boolean
+  lines: LineSet
+  anchorOn: AnchorOn
 }
 
 /**
@@ -197,6 +255,50 @@ export interface Surface {
   muted: string
   accent: string
   staffLine: string
+}
+
+/**
+ * Derive a whole surface from one page colour.
+ *
+ * Everything is a lightness move away from the page in OKLab, so the page's own
+ * hue carries through — a sepia page gets warm greys, a slate page cool ones —
+ * and any colour can be a page rather than only the two that were hand-picked.
+ */
+export function makeSurface(background: string): Surface {
+  const L = lightnessOf(background)
+  const dark = L < 0.5
+  // Absolute targets with a capped chroma, not relative shifts: the further a
+  // derived colour travels from the page, the less of the page's saturation it
+  // should bring, or a warm cream yields pink gridlines.
+  const away = (amount: number, cap = 0.022) =>
+    withLightness(background, dark ? L + amount : L - amount, cap)
+
+  return {
+    background,
+    panel: away(0.04),
+    grid: away(0.035),
+    gridStrong: away(0.11),
+    staffLine: away(dark ? 0.17 : 0.3, 0.018),
+    muted: away(dark ? 0.36 : 0.42, 0.014),
+    text: away(dark ? 0.66 : 0.72, 0.012),
+    accent: away(dark ? 0.72 : 0.78, 0.012),
+  }
+}
+
+/** Resolve a line's colour, honouring the '@auto' sentinel. */
+export function lineColor(line: LineStyle, role: LineRole, surface: Surface): string {
+  if (line.color !== '@auto') return line.color
+  switch (role) {
+    case 'beat':
+      return surface.grid
+    case 'bar':
+      return surface.gridStrong
+    case 'anchor':
+      return surface.gridStrong
+    case 'staff':
+    case 'ledger':
+      return surface.staffLine
+  }
 }
 
 export interface Theme {
@@ -262,7 +364,10 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
   const shapeSet = getShapeSet(theme.encodings.shapeSet)
 
   const rawFill = colorFor(palette, note, key)
-  const fill = rawFill === '@ink' ? theme.surface.text : rawFill
+  const baseFill = rawFill === '@ink' ? theme.surface.text : rawFill
+  // Brightness is applied after the hue is chosen, so it composes with any
+  // colour source rather than needing to be baked into each palette.
+  const fill = shiftLightness(baseFill, lightnessDelta(theme.encodings.color, note))
   const outlined = shouldOutline(note, theme, key)
 
   const base: ResolvedStyle = {

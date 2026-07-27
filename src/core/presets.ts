@@ -7,33 +7,58 @@
  * toggle: an accessible default that nobody understands gets switched off.
  */
 
-import type { Surface, Theme } from './theme'
+import type { LineSet, LineStyle, Surface, Theme } from './theme'
+import { makeSurface } from './theme'
+
+/**
+ * Pages to start from. Any colour works — the rest of the surface is derived
+ * from it — but a curated set saves everyone from picking greys by hand.
+ */
+export const PAGES: { id: string; name: string; color: string }[] = [
+  { id: 'slate', name: 'Slate', color: '#1b1e23' },
+  { id: 'ink', name: 'Ink', color: '#101216' },
+  { id: 'walnut', name: 'Walnut', color: '#221c19' },
+  { id: 'forest', name: 'Forest', color: '#161f1b' },
+  { id: 'paper', name: 'Paper', color: '#f7f8fb' },
+  { id: 'cream', name: 'Cream', color: '#f6f1e6' },
+  { id: 'sepia', name: 'Sepia', color: '#eee2cf' },
+  { id: 'mist', name: 'Mist', color: '#e9eef2' },
+]
+
+const line = (over: Partial<LineStyle> = {}): LineStyle => ({
+  show: true,
+  width: 1,
+  dash: 'solid',
+  opacity: 1,
+  color: '@auto',
+  ...over,
+})
+
+const rollLines = (): LineSet => ({
+  beat: line({ width: 1, opacity: 0.9 }),
+  bar: line({ width: 1.5 }),
+  // Faint but present: alignment stays precise at low contrast, so the anchor
+  // can do its job without adding much clutter.
+  anchor: line({ width: 1, opacity: 0.55, dash: 'dashed' }),
+  staff: line({ show: false }),
+  ledger: line({ show: false }),
+})
+
+const staffLines = (): LineSet => ({
+  beat: line({ show: false }),
+  bar: line({ width: 1.5 }),
+  anchor: line({ show: false }),
+  staff: line({ width: 1 }),
+  ledger: line({ width: 1 }),
+})
 
 /**
  * The score's dark page sits a shade *lighter* than the app's ground, so it
  * reads as an object resting on a desk rather than a hole cut in the screen.
  */
-export const DARK_SURFACE: Surface = {
-  background: '#1b1e23',
-  panel: '#22262c',
-  grid: '#212429',
-  gridStrong: '#2f343c',
-  text: '#e8eaee',
-  muted: '#7a828c',
-  accent: '#ece6da',
-  staffLine: '#363b44',
-}
+export const DARK_SURFACE: Surface = makeSurface('#1b1e23')
 
-export const PAPER_SURFACE: Surface = {
-  background: '#f7f8fb',
-  panel: '#ffffff',
-  grid: '#eceef4',
-  gridStrong: '#d3d8e3',
-  text: '#151a23',
-  muted: '#6b7385',
-  accent: '#2b3038',
-  staffLine: '#aab2c4',
-}
+export const PAPER_SURFACE: Surface = makeSurface('#f7f8fb')
 
 const baseLayout = {
   mode: 'roll' as const,
@@ -45,12 +70,10 @@ const baseLayout = {
   cornerRadius: 5,
   systemGap: 46,
   showKeyboard: true,
-  showGrid: true,
-  showBarlines: true,
   showMeasureNumbers: true,
-  showStaffLines: false,
-  showLedgerLines: false,
   showBlackKeyRows: true,
+  lines: rollLines(),
+  anchorOn: 'octave' as const,
 }
 
 export interface PresetMeta {
@@ -69,7 +92,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       // Fifths rather than rainbow: semitone neighbours are adjacent rows on a
       // roll, so they need the *most* colour distance, not the least.
       color: { source: 'pitch', order: 'fifths', tone: 'bright', rotate: 0,
-        basis: 'pitchClass', accidentalShade: 'same' },
+        basis: 'pitchClass', accidentalShade: 'same',
+        lightnessBy: 'none', lightnessSpread: 0.14 },
       shapeSet: 'capsule',
       label: 'none',
       labelScale: 1,
@@ -88,7 +112,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
     layout: { ...baseLayout, laneHeight: 17, cornerRadius: 8 },
     encodings: {
       color: { source: 'classroom', order: 'chromatic', tone: 'bright', rotate: 0,
-        basis: 'pitchClass', accidentalShade: 'same' },
+        basis: 'pitchClass', accidentalShade: 'same',
+        lightnessBy: 'none', lightnessSpread: 0.14 },
       shapeSet: 'circle',
       label: 'letter',
       labelScale: 1,
@@ -108,7 +133,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
     layout: { ...baseLayout, laneHeight: 16 },
     encodings: {
       color: { source: 'harmony', order: 'fifths', tone: 'bright', rotate: 0,
-        basis: 'pitchClass', accidentalShade: 'same' },
+        basis: 'pitchClass', accidentalShade: 'same',
+        lightnessBy: 'none', lightnessSpread: 0.14 },
       shapeSet: 'degree',
       label: 'degree',
       labelScale: 0.95,
@@ -128,7 +154,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
     layout: { ...baseLayout, laneHeight: 15 },
     encodings: {
       color: { source: 'hands', order: 'fifths', tone: 'bright', rotate: 0,
-        basis: 'pitchClass', accidentalShade: 'same' },
+        basis: 'pitchClass', accidentalShade: 'same',
+        lightnessBy: 'none', lightnessSpread: 0.14 },
       shapeSet: 'hand',
       label: 'none',
       labelScale: 1,
@@ -150,11 +177,12 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       laneHeight: 14,
       cornerRadius: 3,
       showBlackKeyRows: false,
-      showGrid: false,
+      lines: { ...rollLines(), beat: line({ show: false }) },
     },
     encodings: {
       color: { source: 'ink', order: 'fifths', tone: 'bright', rotate: 0,
-        basis: 'pitchClass', accidentalShade: 'same' },
+        basis: 'pitchClass', accidentalShade: 'same',
+        lightnessBy: 'none', lightnessSpread: 0.14 },
       shapeSet: 'duration',
       label: 'none',
       labelScale: 1,
@@ -178,16 +206,16 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       beatWidth: 58,
       cornerRadius: 7,
       showKeyboard: false,
-      showStaffLines: true,
-      showLedgerLines: true,
       showBlackKeyRows: false,
-      showGrid: false,
+      lines: staffLines(),
+      anchorOn: 'none' as const,
     },
     encodings: {
       // Letter basis: a sharp shares its natural's hue and the accidental rides
       // on shape and fill instead, which this preset already provides.
       color: { source: 'pitch', order: 'chromatic', tone: 'deep', rotate: 0,
-        basis: 'letter', accidentalShade: 'darker' },
+        basis: 'letter', accidentalShade: 'darker',
+        lightnessBy: 'none', lightnessSpread: 0.14 },
       shapeSet: 'accidental',
       label: 'none',
       labelScale: 1,

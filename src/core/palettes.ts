@@ -259,7 +259,30 @@ export interface ColorConfig {
   basis: ColorBasis
   /** Only meaningful on the letter basis, where a sharp shares its hue. */
   accidentalShade: AccidentalShade
+  /**
+   * What varies the brightness of a note, on top of its hue.
+   *
+   * Worth having as its own channel because hue and lightness are not read the
+   * same way. Colours that differ in hue but not brightness are resolved slowly
+   * — they are close to invisible to the fast, achromatic part of vision that
+   * handles rapid glances, which is most of what sight-reading is. A palette
+   * with even lightness across every hue looks immaculate and gives that fast
+   * channel nothing to work with.
+   */
+  lightnessBy: LightnessBy
+  /** How far the brightness spreads, in OKLab lightness. */
+  lightnessSpread: number
 }
+
+export type LightnessBy = 'none' | 'register' | 'hand' | 'alternate' | 'accidentals'
+
+export const LIGHTNESS_SOURCES: { id: LightnessBy; label: string; note: string }[] = [
+  { id: 'none', label: 'Nothing', note: 'Every note the same brightness — even, and slower to read at a glance.' },
+  { id: 'register', label: 'Register', note: 'Brighter as pitch rises. Height becomes readable without reading position.' },
+  { id: 'hand', label: 'Hands', note: 'One hand brighter than the other.' },
+  { id: 'alternate', label: 'Neighbours', note: 'Alternates note to note, so adjacent pitches differ in brightness as well as hue.' },
+  { id: 'accidentals', label: 'Sharps & flats', note: 'Accidentals darker than naturals.' },
+]
 
 export const DEFAULT_COLOR: ColorConfig = {
   source: 'pitch',
@@ -268,6 +291,33 @@ export const DEFAULT_COLOR: ColorConfig = {
   rotate: 0,
   basis: 'pitchClass',
   accidentalShade: 'same',
+  lightnessBy: 'none',
+  lightnessSpread: 0.14,
+}
+
+/**
+ * How far this note's brightness moves from the palette's own lightness.
+ * Returned in OKLab lightness, so it can be applied to any resolved colour.
+ */
+export function lightnessDelta(config: ColorConfig, note: NoteEvent): number {
+  const spread = config.lightnessSpread
+  if (config.lightnessBy === 'none' || spread === 0) return 0
+
+  switch (config.lightnessBy) {
+    case 'register': {
+      // Two octaves either side of middle C covers most piano writing.
+      const t = Math.max(-1, Math.min(1, (note.midi - 60) / 24))
+      return t * spread
+    }
+    case 'hand':
+      return note.hand === 'right' ? spread / 2 : -spread / 2
+    case 'alternate':
+      return pitchClass(note.midi) % 2 === 0 ? spread / 2 : -spread / 2
+    case 'accidentals':
+      return isNatural(pitchClass(note.midi)) ? spread / 2 : -spread / 2
+    default:
+      return 0
+  }
 }
 
 export const normalizeHue = (deg: number): number => ((deg % 360) + 360) % 360
