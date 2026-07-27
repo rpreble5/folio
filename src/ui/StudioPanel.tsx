@@ -357,6 +357,7 @@ function ColourTab() {
               names={names}
               surface={theme.surface}
               onShift={setShift}
+              onRotate={(rotate) => patchColor({ rotate })}
             />
           </div>
 

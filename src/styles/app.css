@@ -703,9 +703,19 @@ button {
   height: auto;
 }
 
+.wheel__ring {
+  /* The spin. Eased so a rotation reads as the spectrum turning under the
+     notes rather than as an instant recolour. */
+  transition: transform var(--dur) var(--ease);
+  cursor: grab;
+}
+
+.wheel__ring:active {
+  cursor: grabbing;
+}
+
 .wheel__ring path {
-  /* Wedges are re-coloured whenever the tone changes; easing that makes the
-     whole wheel turn over rather than snap. */
+  /* Only the tone changes a wedge's colour now — rotation moves the group. */
   transition: fill var(--dur) var(--ease);
 }
 

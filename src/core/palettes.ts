@@ -286,6 +286,19 @@ export function noteHue(config: ColorConfig, slot: number): number {
   return normalizeHue(baseHue(config, slot) + (config.hueShift?.[slot] ?? 0))
 }
 
+/**
+ * A slot's angle from the scheme and its nudge alone, with rotation left out.
+ *
+ * This is the note's *position on the wheel*, as distinct from its hue. The two
+ * differ once the wheel is rotated: the notes hold still and the spectrum turns
+ * beneath them, so a note keeps its place while its colour changes.
+ */
+export function schemeAngle(config: ColorConfig, slot: number): number {
+  return normalizeHue(
+    baseHue({ ...config, rotate: 0 }, slot) + (config.hueShift?.[slot] ?? 0),
+  )
+}
+
 export function hasHueShift(config: ColorConfig): boolean {
   return (config.hueShift ?? []).some((d) => Math.round(d) !== 0)
 }

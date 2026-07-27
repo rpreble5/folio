@@ -9,14 +9,19 @@
  *
  * The ring is drawn at the current tone's own lightness and chroma, so it
  * previews the palette you are actually building rather than a generic rainbow.
+ *
+ * Rotating turns the *ring*, not the notes. Spinning the notes instead would
+ * move C somewhere new every time, costing the reader their reference point
+ * mid-adjustment; holding the notes still and letting the spectrum flow past
+ * keeps them as the anchor, and each dot simply changes colour in place.
  */
 
 import { useRef, useState } from 'react'
 import {
   type ColorConfig,
-  baseHue,
   noteHue,
   normalizeHue,
+  schemeAngle,
   toneSample,
 } from '../core/palettes'
 import { oklch } from '../core/oklch'
@@ -74,13 +79,16 @@ interface Props {
   names: string[]
   surface: { background: string; text: string; muted: string }
   onShift: (slot: number, degrees: number) => void
-  size?: number
+  onRotate: (degrees: number) => void
 }
 
-export function HueWheel({ config, colors, names, surface, onShift }: Props) {
+export function HueWheel({ config, colors, names, surface, onShift, onRotate }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [dragging, setDragging] = useState<number | null>(null)
   const [focused, setFocused] = useState<number | null>(null)
+  // Where the ring grab started, so the spin tracks the hand rather than
+  // jumping to wherever the pointer happens to be.
+  const spin = useRef<{ pointer: number; rotate: number } | null>(null)
 
   const tone = toneSample(config.tone)
   const wedges: { hue: number; fill: string }[] = []
@@ -88,8 +96,8 @@ export function HueWheel({ config, colors, names, surface, onShift }: Props) {
     wedges.push({ hue, fill: oklch(tone.lightness, tone.chroma, hue) })
   }
 
-  /** Convert a pointer position into the hue it points at. */
-  const hueAt = (clientX: number, clientY: number): number | null => {
+  /** Convert a pointer position into the wheel angle it points at. */
+  const angleAt = (clientX: number, clientY: number): number | null => {
     const svg = svgRef.current
     if (!svg) return null
     const rect = svg.getBoundingClientRect()
@@ -100,12 +108,24 @@ export function HueWheel({ config, colors, names, surface, onShift }: Props) {
   }
 
   const setFromPointer = (pc: number, clientX: number, clientY: number) => {
-    const hue = hueAt(clientX, clientY)
-    if (hue === null) return
+    const angle = angleAt(clientX, clientY)
+    if (angle === null) return
     // Snap to whole degrees in fives; free-dragging to 0.3° precision is a
     // false affordance nobody can hit twice.
-    const snapped = Math.round(hue / 5) * 5
-    onShift(pc, shortestDelta(baseHue(config, pc), snapped))
+    const snapped = Math.round(angle / 5) * 5
+    // The pointer gives a position on the wheel, and a shift is measured from
+    // where the scheme alone would have put this note — rotation is not part of
+    // either, since the notes do not move when the ring turns.
+    onShift(pc, shortestDelta(schemeAngle({ ...config, hueShift: undefined }, pc), snapped))
+  }
+
+  const spinFromPointer = (clientX: number, clientY: number) => {
+    const angle = angleAt(clientX, clientY)
+    if (angle === null || !spin.current) return
+    const swept = shortestDelta(spin.current.pointer, angle)
+    // Dragging the ring clockwise should carry the spectrum clockwise, which is
+    // a decrease in the rotation offset.
+    onRotate(normalizeHue(Math.round((spin.current.rotate - swept) / 15) * 15))
   }
 
   return (
@@ -119,11 +139,33 @@ export function HueWheel({ config, colors, names, surface, onShift }: Props) {
       aria-label="Hue wheel — where each note sits in colour"
       onPointerMove={(e) => {
         if (dragging !== null) setFromPointer(dragging, e.clientX, e.clientY)
+        else if (spin.current) spinFromPointer(e.clientX, e.clientY)
       }}
-      onPointerUp={() => setDragging(null)}
-      onPointerLeave={() => setDragging(null)}
+      onPointerUp={() => {
+        setDragging(null)
+        spin.current = null
+      }}
+      onPointerLeave={() => {
+        setDragging(null)
+        spin.current = null
+      }}
     >
-      <g className="wheel__ring">
+      {/* Rotating the group rather than recolouring the wedges is what makes
+          this read as a physical turn instead of a cross-fade. */}
+      <g
+        className="wheel__ring"
+        style={{
+          transform: `rotate(${-config.rotate}deg)`,
+          transformOrigin: `${C}px ${C}px`,
+        }}
+        onPointerDown={(e) => {
+          const angle = angleAt(e.clientX, e.clientY)
+          if (angle === null) return
+          e.preventDefault()
+          spin.current = { pointer: angle, rotate: config.rotate }
+          svgRef.current?.setPointerCapture(e.pointerId)
+        }}
+      >
         {wedges.map((w) => (
           <path key={w.hue} d={wedgePath(w.hue, STEP)} fill={w.fill} />
         ))}
@@ -132,9 +174,9 @@ export function HueWheel({ config, colors, names, surface, onShift }: Props) {
       {/* Spokes from the ring to each note, so a nudged note reads as moved
           rather than merely as sitting somewhere. */}
       {names.map((_, pc) => {
-        const hue = noteHue(config, pc)
-        const [ix, iy] = polar(R_INNER + 2, hue)
-        const [ox, oy] = polar(R_HANDLE - HANDLE_R - 1, hue)
+        const at = schemeAngle(config, pc)
+        const [ix, iy] = polar(R_INNER + 2, at)
+        const [ox, oy] = polar(R_HANDLE - HANDLE_R - 1, at)
         return (
           <line
             key={`spoke-${pc}`}
@@ -150,9 +192,10 @@ export function HueWheel({ config, colors, names, surface, onShift }: Props) {
       })}
 
       {names.map((name, pc) => {
+        const at = schemeAngle(config, pc)
         const hue = noteHue(config, pc)
-        const [hx, hy] = polar(R_HANDLE, hue)
-        const [lx, ly] = polar(R_LABEL, hue)
+        const [hx, hy] = polar(R_HANDLE, at)
+        const [lx, ly] = polar(R_LABEL, at)
         const active = dragging === pc || focused === pc
         const shifted = Math.round(config.hueShift?.[pc] ?? 0) !== 0
 
