@@ -19,8 +19,10 @@ import {
   SHAPE_SETS,
   TONES,
   buildPalette,
+  hasHueShift,
   type ColorConfig,
 } from '../core/palettes'
+import { HueWheel } from './HueWheel'
 import {
   OUTLINE_TARGETS,
   describeSelector,
@@ -295,9 +297,20 @@ function ColourTab() {
                 onChange={(rotate) => patchColor({ rotate })}
               />
             </Field>
-            <p className="note-text">
-              {HUE_ORDERS.find((o) => o.id === color.order)?.note}
-            </p>
+            <Strip colors={palette.colors} surface={theme.surface} />
+            {hasHueShift(color) ? (
+              <button
+                className="pill pill--solid"
+                onClick={() => patchColor({ hueShift: undefined })}
+              >
+                Reset {countShifted(color)} moved note
+                {countShifted(color) === 1 ? '' : 's'}
+              </button>
+            ) : (
+              <p className="note-text">
+                {HUE_ORDERS.find((o) => o.id === color.order)?.note}
+              </p>
+            )}
           </>
         ) : (
           <p className="note-text">
@@ -306,15 +319,36 @@ function ColourTab() {
         )}
       </Group>
 
-      <Group label="In pitch order">
-        {/* A rainbow order reads here as a gradient, a fifths order as a
-            scatter — the difference made visible rather than described. */}
-        <Strip colors={palette.colors} surface={theme.surface} tall />
-        <p className="note-text">
-          {source?.cvdSafe
-            ? 'Safe for every kind of colour vision.'
-            : 'Twelve hues cannot all stay distinct for a colour-blind reader. Pair this with a shape, a label, or the hollow channel — and check it under Styles.'}
-        </p>
+      <Group label={source?.tunable ? 'On the wheel' : 'In pitch order'}>
+        {source?.tunable ? (
+          <>
+            <HueWheel
+              config={color}
+              colors={palette.colors}
+              surface={theme.surface}
+              onShift={(pc, degrees) => {
+                const next = Array.from({ length: 12 }, (_, i) => color.hueShift?.[i] ?? 0)
+                next[pc] = degrees
+                patchColor({ hueShift: next })
+              }}
+            />
+            <p className="note-text">
+              Drag any note to move it round the wheel, or focus one and use the
+              arrow keys. Backspace puts it back.
+            </p>
+          </>
+        ) : (
+          <>
+            {/* A rainbow order reads here as a gradient, a fifths order as a
+                scatter — the difference made visible rather than described. */}
+            <Strip colors={palette.colors} surface={theme.surface} tall />
+            <p className="note-text">
+              {source?.cvdSafe
+                ? 'Safe for every kind of colour vision.'
+                : 'Twelve hues cannot all stay distinct for a colour-blind reader. Pair this with a shape, a label, or the hollow channel.'}
+            </p>
+          </>
+        )}
       </Group>
     </div>
   )
@@ -537,6 +571,9 @@ function PageTab() {
     </div>
   )
 }
+
+const countShifted = (color: ColorConfig): number =>
+  (color.hueShift ?? []).filter((d) => Math.round(d) !== 0).length
 
 /** Every colour in the palette, in order, on the score's own page colour. */
 function Strip({

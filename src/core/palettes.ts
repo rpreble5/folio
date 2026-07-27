@@ -199,6 +199,15 @@ export interface ColorConfig {
   tone: ToneId
   /** Degrees to rotate the whole wheel. Same structure, different mood. */
   rotate: number
+  /**
+   * Per-pitch-class nudges, in degrees, on top of the order and rotation.
+   *
+   * Offsets rather than absolute hues, so `order` stays meaningful: it is the
+   * underlying arrangement and these are adjustments to it. Storing absolute
+   * positions would quietly kill the order control the moment anything was
+   * dragged.
+   */
+  hueShift?: number[]
 }
 
 export const DEFAULT_COLOR: ColorConfig = {
@@ -206,6 +215,31 @@ export const DEFAULT_COLOR: ColorConfig = {
   order: 'fifths',
   tone: 'bright',
   rotate: 0,
+}
+
+export const normalizeHue = (deg: number): number => ((deg % 360) + 360) % 360
+
+/** Where the scheme alone puts a pitch class, before any manual nudge. */
+export function baseHue(config: ColorConfig, pc: number): number {
+  return normalizeHue(hueFor(config.order, pc, config.rotate))
+}
+
+/** Where a pitch class actually sits, nudges included. */
+export function noteHue(config: ColorConfig, pc: number): number {
+  return normalizeHue(baseHue(config, pc) + (config.hueShift?.[pc] ?? 0))
+}
+
+export function hasHueShift(config: ColorConfig): boolean {
+  return (config.hueShift ?? []).some((d) => Math.round(d) !== 0)
+}
+
+/** Representative lightness and chroma, for drawing the wheel in this tone. */
+export function toneSample(id: ToneId): { lightness: number; chroma: number } {
+  const tone = toneById(id)
+  const lightness = Array.isArray(tone.lightness)
+    ? (tone.lightness[0] + tone.lightness[1]) / 2
+    : tone.lightness
+  return { lightness, chroma: tone.chroma }
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +319,7 @@ const cache = new Map<string, Palette>()
 export function buildPalette(config: ColorConfig): Palette {
   if (config.source !== 'pitch') return FIXED[config.source]
 
-  const key = `${config.order}|${config.tone}|${config.rotate}`
+  const key = `${config.order}|${config.tone}|${config.rotate}|${(config.hueShift ?? []).map(Math.round).join(',')}`
   const hit = cache.get(key)
   if (hit) return hit
 
@@ -309,7 +343,7 @@ export function buildPalette(config: ColorConfig): Palette {
     const L = Array.isArray(lightness)
       ? lightness[byKeys ? (isNatural(pc) ? 0 : 1) : pc % 2]
       : lightness
-    colors.push(oklch(L, tone.chroma, hueFor(config.order, pc, config.rotate)))
+    colors.push(oklch(L, tone.chroma, noteHue(config, pc)))
     onColor.push(inkOn(L))
   }
 

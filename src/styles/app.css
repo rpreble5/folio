@@ -584,6 +584,36 @@ button {
   border-radius: 2px;
 }
 
+/* ---------------------------------------------------------------- wheel --- */
+
+.wheel {
+  display: block;
+  touch-action: none;
+  user-select: none;
+  max-width: 100%;
+  height: auto;
+}
+
+.wheel__ring path {
+  /* Wedges are re-coloured whenever the tone changes; easing that makes the
+     whole wheel turn over rather than snap. */
+  transition: fill var(--dur) var(--ease);
+}
+
+.wheel__handle {
+  transition: r var(--dur-fast) var(--ease), fill var(--dur) var(--ease);
+}
+
+/* A CSS outline on a <circle> traces its bounding box, so focus is drawn as a
+   real circle in the SVG instead. */
+.wheel__handle:focus-visible {
+  outline: none;
+}
+
+.wheel__handle:active {
+  cursor: grabbing;
+}
+
 /* The live palette readout, shown larger than the picker thumbnails. */
 .tile__swatches--tall {
   padding: 5px;
