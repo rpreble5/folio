@@ -68,7 +68,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
     encodings: {
       // Fifths rather than rainbow: semitone neighbours are adjacent rows on a
       // roll, so they need the *most* colour distance, not the least.
-      color: { source: 'pitch', order: 'fifths', tone: 'bright', rotate: 0 },
+      color: { source: 'pitch', order: 'fifths', tone: 'bright', rotate: 0,
+        basis: 'pitchClass', accidentalShade: 'same' },
       shapeSet: 'capsule',
       label: 'none',
       labelScale: 1,
@@ -86,7 +87,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       'The colour set used by chime bars and coloured bells, with letter names inside every note. Familiar ground if you have played in a school music room.',
     layout: { ...baseLayout, laneHeight: 17, cornerRadius: 8 },
     encodings: {
-      color: { source: 'classroom', order: 'chromatic', tone: 'bright', rotate: 0 },
+      color: { source: 'classroom', order: 'chromatic', tone: 'bright', rotate: 0,
+        basis: 'pitchClass', accidentalShade: 'same' },
       shapeSet: 'circle',
       label: 'letter',
       labelScale: 1,
@@ -105,7 +107,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       'Colour follows the note’s role in the key rather than its letter, so the tonic is blue and the dominant orange no matter what you play. Shapes repeat the same information, so the colour is never load-bearing on its own.',
     layout: { ...baseLayout, laneHeight: 16 },
     encodings: {
-      color: { source: 'harmony', order: 'fifths', tone: 'bright', rotate: 0 },
+      color: { source: 'harmony', order: 'fifths', tone: 'bright', rotate: 0,
+        basis: 'pitchClass', accidentalShade: 'same' },
       shapeSet: 'degree',
       label: 'degree',
       labelScale: 0.95,
@@ -124,7 +127,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       'Two colours, one per hand, and nothing else competing for attention. The quietest way to read a piece when you are working out coordination.',
     layout: { ...baseLayout, laneHeight: 15 },
     encodings: {
-      color: { source: 'hands', order: 'fifths', tone: 'bright', rotate: 0 },
+      color: { source: 'hands', order: 'fifths', tone: 'bright', rotate: 0,
+        basis: 'pitchClass', accidentalShade: 'same' },
       shapeSet: 'hand',
       label: 'none',
       labelScale: 1,
@@ -149,7 +153,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       showGrid: false,
     },
     encodings: {
-      color: { source: 'ink', order: 'fifths', tone: 'bright', rotate: 0 },
+      color: { source: 'ink', order: 'fifths', tone: 'bright', rotate: 0,
+        basis: 'pitchClass', accidentalShade: 'same' },
       shapeSet: 'duration',
       label: 'none',
       labelScale: 1,
@@ -179,7 +184,10 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       showGrid: false,
     },
     encodings: {
-      color: { source: 'pitch', order: 'chromatic', tone: 'deep', rotate: 0 },
+      // Letter basis: a sharp shares its natural's hue and the accidental rides
+      // on shape and fill instead, which this preset already provides.
+      color: { source: 'pitch', order: 'chromatic', tone: 'deep', rotate: 0,
+        basis: 'letter', accidentalShade: 'darker' },
       shapeSet: 'accidental',
       label: 'none',
       labelScale: 1,

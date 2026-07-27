@@ -38,8 +38,6 @@ const HANDLE_R = 9.5
 /** Degrees per wedge. Small enough to read as continuous. */
 const STEP = 4
 
-const NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
-
 /** Hue 0 at twelve o'clock, increasing clockwise. */
 const toScreen = (hue: number): number => hue - 90
 
@@ -72,11 +70,14 @@ function shortestDelta(from: number, to: number): number {
 interface Props {
   config: ColorConfig
   colors: string[]
+  /** One label per slot — twelve semitones, or seven letter names. */
+  names: string[]
   surface: { background: string; text: string; muted: string }
-  onShift: (pitchClass: number, degrees: number) => void
+  onShift: (slot: number, degrees: number) => void
+  size?: number
 }
 
-export function HueWheel({ config, colors, surface, onShift }: Props) {
+export function HueWheel({ config, colors, names, surface, onShift }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [dragging, setDragging] = useState<number | null>(null)
   const [focused, setFocused] = useState<number | null>(null)
@@ -130,7 +131,7 @@ export function HueWheel({ config, colors, surface, onShift }: Props) {
 
       {/* Spokes from the ring to each note, so a nudged note reads as moved
           rather than merely as sitting somewhere. */}
-      {NAMES.map((_, pc) => {
+      {names.map((_, pc) => {
         const hue = noteHue(config, pc)
         const [ix, iy] = polar(R_INNER + 2, hue)
         const [ox, oy] = polar(R_HANDLE - HANDLE_R - 1, hue)
@@ -148,7 +149,7 @@ export function HueWheel({ config, colors, surface, onShift }: Props) {
         )
       })}
 
-      {NAMES.map((name, pc) => {
+      {names.map((name, pc) => {
         const hue = noteHue(config, pc)
         const [hx, hy] = polar(R_HANDLE, hue)
         const [lx, ly] = polar(R_LABEL, hue)

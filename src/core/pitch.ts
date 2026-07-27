@@ -10,6 +10,11 @@ const STEP_SEMITONES: Record<Step, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 
 /** Diatonic index (0..6) for each letter name — the vertical axis of a staff. */
 const STEP_INDEX: Record<Step, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 }
 
+/** 0–6 for C–B. The note's *written* letter, ignoring any accidental. */
+export function letterIndex(step: Step): number {
+  return STEP_INDEX[step]
+}
+
 export function spellingToMidi(s: Spelling): number {
   return (s.octave + 1) * 12 + STEP_SEMITONES[s.step] + s.alter
 }

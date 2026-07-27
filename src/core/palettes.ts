@@ -14,7 +14,7 @@
  */
 
 import type { KeyMark, NoteEvent } from './types'
-import { isBlackKey, octaveOf, pitchClass, scaleDegree } from './pitch'
+import { isBlackKey, letterIndex, octaveOf, pitchClass, scaleDegree } from './pitch'
 import { inkOn, oklch } from './oklch'
 
 export type ShapeKind =
@@ -33,10 +33,16 @@ export interface Palette {
   note: string
   cvdSafe: boolean
   /** Which musical dimension this palette reads. */
-  domain: 'pitchClass' | 'scaleDegree' | 'hand' | 'octave' | 'fixed'
+  domain: 'pitchClass' | 'letter' | 'scaleDegree' | 'hand' | 'octave' | 'fixed'
   colors: string[]
   /** Text colour for a label sitting inside the note. */
   onColor?: string[]
+  /**
+   * Used by the 'letter' domain for notes carrying an accidental, so a sharp
+   * can sit a shade off its natural while keeping the same hue.
+   */
+  altColors?: string[]
+  altOnColor?: string[]
 }
 
 const INK = '#0b0d11'
@@ -108,6 +114,47 @@ function hueFor(order: HueOrder, pc: number, offset: number): number {
   const index = order === 'fifths' ? fifthsIndex(pc) : pc
   return (index * 30 + 25 + offset) % 360
 }
+
+// ---------------------------------------------------------------------------
+// Basis: what gets a colour of its own
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a colour belongs to a semitone or to a letter name.
+ *
+ * 'letter' gives C and C♯ the same hue and leaves the accidental to shape or
+ * fill. That is closer to how the note is actually thought about — a sharp is
+ * a kind of its natural — and it drops the palette from twelve hues to seven,
+ * which are far easier to tell apart. Written spelling decides the letter, so
+ * C♯ takes C's hue while D♭ takes D's.
+ */
+export type ColorBasis = 'pitchClass' | 'letter'
+
+export const LETTER_NAMES = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+
+/** Position of each letter on the circle of fifths: F C G D A E B. */
+const LETTER_FIFTHS = [0, 2, 4, 6, 1, 3, 5]
+
+function letterHue(order: HueOrder, letter: number, offset: number): number {
+  const index = order === 'fifths' ? LETTER_FIFTHS[letter] : letter
+  return ((index * 360) / 7 + 25 + offset) % 360
+}
+
+/** How many independent colours a basis has. */
+export const slotCount = (basis: ColorBasis): number => (basis === 'letter' ? 7 : 12)
+
+export const slotNames = (basis: ColorBasis): string[] =>
+  basis === 'letter' ? LETTER_NAMES : NAMES_12
+
+const NAMES_12 = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+
+export type AccidentalShade = 'same' | 'lighter' | 'darker'
+
+export const ACCIDENTAL_SHADES: { id: AccidentalShade; label: string }[] = [
+  { id: 'same', label: 'Same' },
+  { id: 'lighter', label: 'Lighter' },
+  { id: 'darker', label: 'Darker' },
+]
 
 // ---------------------------------------------------------------------------
 // Tone
@@ -208,6 +255,10 @@ export interface ColorConfig {
    * dragged.
    */
   hueShift?: number[]
+  /** Whether a colour belongs to a semitone or to a letter name. */
+  basis: ColorBasis
+  /** Only meaningful on the letter basis, where a sharp shares its hue. */
+  accidentalShade: AccidentalShade
 }
 
 export const DEFAULT_COLOR: ColorConfig = {
@@ -215,18 +266,24 @@ export const DEFAULT_COLOR: ColorConfig = {
   order: 'fifths',
   tone: 'bright',
   rotate: 0,
+  basis: 'pitchClass',
+  accidentalShade: 'same',
 }
 
 export const normalizeHue = (deg: number): number => ((deg % 360) + 360) % 360
 
-/** Where the scheme alone puts a pitch class, before any manual nudge. */
-export function baseHue(config: ColorConfig, pc: number): number {
-  return normalizeHue(hueFor(config.order, pc, config.rotate))
+/** Where the scheme alone puts a slot, before any manual nudge. */
+export function baseHue(config: ColorConfig, slot: number): number {
+  return normalizeHue(
+    config.basis === 'letter'
+      ? letterHue(config.order, slot, config.rotate)
+      : hueFor(config.order, slot, config.rotate),
+  )
 }
 
-/** Where a pitch class actually sits, nudges included. */
-export function noteHue(config: ColorConfig, pc: number): number {
-  return normalizeHue(baseHue(config, pc) + (config.hueShift?.[pc] ?? 0))
+/** Where a slot actually sits, nudges included. */
+export function noteHue(config: ColorConfig, slot: number): number {
+  return normalizeHue(baseHue(config, slot) + (config.hueShift?.[slot] ?? 0))
 }
 
 export function hasHueShift(config: ColorConfig): boolean {
@@ -319,11 +376,56 @@ const cache = new Map<string, Palette>()
 export function buildPalette(config: ColorConfig): Palette {
   if (config.source !== 'pitch') return FIXED[config.source]
 
-  const key = `${config.order}|${config.tone}|${config.rotate}|${(config.hueShift ?? []).map(Math.round).join(',')}`
+  const key = [
+    config.basis,
+    config.order,
+    config.tone,
+    config.rotate,
+    config.accidentalShade,
+    (config.hueShift ?? []).map(Math.round).join(','),
+  ].join('|')
   const hit = cache.get(key)
   if (hit) return hit
 
   const tone = toneById(config.tone)
+  const order = HUE_ORDERS.find((o) => o.id === config.order)!
+
+  if (config.basis === 'letter') {
+    const L = Array.isArray(tone.lightness) ? tone.lightness[0] : tone.lightness
+    const delta =
+      config.accidentalShade === 'lighter' ? 0.1 : config.accidentalShade === 'darker' ? -0.13 : 0
+
+    const colors: string[] = []
+    const onColor: string[] = []
+    const altColors: string[] = []
+    const altOnColor: string[] = []
+
+    for (let letter = 0; letter < 7; letter++) {
+      const hue = noteHue(config, letter)
+      colors.push(oklch(L, tone.chroma, hue))
+      onColor.push(inkOn(L))
+      // Same hue, optionally a shade off — so an accidental stays recognisably
+      // a kind of its natural rather than becoming a separate colour.
+      const altL = clamp01(L + delta)
+      altColors.push(oklch(altL, tone.chroma, hue))
+      altOnColor.push(inkOn(altL))
+    }
+
+    const palette: Palette = {
+      id: `letter-${key}`,
+      name: `${order.name} · ${tone.name}`,
+      note: 'Sharps and flats share their letter’s colour. Tell them apart with shape or fill.',
+      cvdSafe: false,
+      domain: 'letter',
+      colors,
+      onColor,
+      altColors,
+      altOnColor,
+    }
+    cache.set(key, palette)
+    return palette
+  }
+
   let lightness = tone.lightness
   let byKeys = false
 
@@ -347,7 +449,6 @@ export function buildPalette(config: ColorConfig): Palette {
     onColor.push(inkOn(L))
   }
 
-  const order = HUE_ORDERS.find((o) => o.id === config.order)!
   const palette: Palette = {
     id: `pitch-${key}`,
     name: `${order.name} · ${tone.name}`,
@@ -374,6 +475,8 @@ function paletteIndex(palette: Palette, note: NoteEvent, key: KeyMark): number {
   switch (palette.domain) {
     case 'pitchClass':
       return pitchClass(note.midi)
+    case 'letter':
+      return letterIndex(note.spelling.step)
     case 'scaleDegree':
       return scaleDegree(note.midi, key)
     case 'hand':
@@ -385,12 +488,20 @@ function paletteIndex(palette: Palette, note: NoteEvent, key: KeyMark): number {
   }
 }
 
+/** On the letter basis a written accidental takes the shaded variant. */
+const usesAlt = (palette: Palette, note: NoteEvent): boolean =>
+  palette.domain === 'letter' && palette.altColors !== undefined && note.spelling.alter !== 0
+
 export function colorFor(palette: Palette, note: NoteEvent, key: KeyMark): string {
-  return palette.colors[paletteIndex(palette, note, key)] ?? palette.colors[0]
+  const index = paletteIndex(palette, note, key)
+  if (usesAlt(palette, note)) return palette.altColors![index] ?? palette.colors[0]
+  return palette.colors[index] ?? palette.colors[0]
 }
 
 export function onColorFor(palette: Palette, note: NoteEvent, key: KeyMark): string {
-  return palette.onColor?.[paletteIndex(palette, note, key)] ?? INK
+  const index = paletteIndex(palette, note, key)
+  if (usesAlt(palette, note)) return palette.altOnColor?.[index] ?? INK
+  return palette.onColor?.[index] ?? INK
 }
 
 // ---------------------------------------------------------------------------

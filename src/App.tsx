@@ -26,6 +26,7 @@ export default function App() {
   const tempoScale = useStore((s) => s.tempoScale)
   const selectedNoteId = useStore((s) => s.selectedNoteId)
   const cvd = useStore((s) => s.cvd)
+  const studioTab = useStore((s) => s.studioTab)
   const toast = useStore((s) => s.toast)
 
   const setScreen = useStore((s) => s.setScreen)
@@ -188,7 +189,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={studioTab === 'colour' ? 'app app--lab' : 'app'}>
       <header className="topbar">
         <button className="wordmark" onClick={() => setScreen('library')}>
           <span className="wordmark__dot" />

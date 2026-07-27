@@ -31,6 +31,7 @@ function persistCustomThemes(themes: Theme[]): void {
 }
 
 export type Screen = 'library' | 'score'
+export type StudioTab = 'styles' | 'colour' | 'marks' | 'page'
 
 interface State {
   screen: Screen
@@ -43,6 +44,8 @@ interface State {
 
   selectedNoteId: string | null
   studioOpen: boolean
+  /** Lifted so the shell can give Colour a taller panel. */
+  studioTab: StudioTab
   cvd: CvdMode
 
   playing: boolean
@@ -69,6 +72,7 @@ interface State {
 
   selectNote: (id: string | null) => void
   setStudioOpen: (open: boolean) => void
+  setStudioTab: (tab: StudioTab) => void
   setCvd: (mode: CvdMode) => void
 
   setPlaying: (playing: boolean) => void
@@ -95,6 +99,7 @@ export const useStore = create<State>((set, get) => ({
 
   selectedNoteId: null,
   studioOpen: true,
+  studioTab: 'styles',
   cvd: 'none',
 
   playing: false,
@@ -176,6 +181,7 @@ export const useStore = create<State>((set, get) => ({
 
   selectNote: (id) => set({ selectedNoteId: id }),
   setStudioOpen: (studioOpen) => set({ studioOpen }),
+  setStudioTab: (studioTab) => set({ studioTab }),
   setCvd: (cvd) => set({ cvd }),
 
   setPlaying: (playing) => set({ playing }),

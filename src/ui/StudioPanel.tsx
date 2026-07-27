@@ -18,8 +18,12 @@ import {
   HUE_ORDERS,
   SHAPE_SETS,
   TONES,
+  ACCIDENTAL_SHADES,
   buildPalette,
   hasHueShift,
+  noteHue,
+  slotCount,
+  slotNames,
   type ColorConfig,
 } from '../core/palettes'
 import { HueWheel } from './HueWheel'
@@ -52,7 +56,8 @@ const LABEL_OPTIONS: { value: LabelKind; label: string }[] = [
 ]
 
 export function StudioPanel() {
-  const [tab, setTab] = useState<Tab>('styles')
+  const tab = useStore((s) => s.studioTab)
+  const setTab = useStore((s) => s.setStudioTab)
   const dirty = useStore((s) => s.dirty)
   const ruleCount = useStore((s) => s.theme.rules.length)
 
@@ -244,112 +249,166 @@ function ColourTab() {
   const patchColor = (patch: Partial<ColorConfig>) =>
     patchEncodings({ color: { ...color, ...patch } })
 
+  const names = slotNames(color.basis)
+  const tunable = source?.tunable ?? false
+
+  // Letter basis puts sharps on their natural's hue, which is the opposite of
+  // what the Keys order does, so that pairing is withheld rather than offered
+  // and then quietly ignored.
+  const orders = HUE_ORDERS.filter((o) => color.basis !== 'letter' || o.id !== 'keys')
+
+  const setShift = (slot: number, degrees: number) => {
+    const next = Array.from({ length: slotCount(color.basis) }, (_, i) =>
+      i === slot ? degrees : color.hueShift?.[i] ?? 0,
+    )
+    patchColor({ hueShift: next })
+  }
+
   return (
-    <div className="columns columns--3 columns--colour">
+    <div className="colour-lab">
       <Group label="Colour by">
-        <div className="tiles">
-          {COLOR_SOURCES.map((s) => (
-            <Tile
-              key={s.id}
-              className="palette-tile"
-              selected={color.source === s.id}
-              onClick={() => patchColor({ source: s.id })}
-              title={s.note}
-            >
-              {/* Each thumbnail previews that source under the *current* order
-                  and tone, so switching source does not feel like a jump. */}
-              <Strip
-                colors={buildPalette({ ...color, source: s.id }).colors}
-                surface={theme.surface}
-              />
-              <div className="tile__name">{s.name}</div>
+          <div className="tiles">
+            {COLOR_SOURCES.map((s) => (
+              <Tile
+                key={s.id}
+                className="palette-tile"
+                selected={color.source === s.id}
+                onClick={() => patchColor({ source: s.id })}
+                title={s.note}
+              >
+                {/* Each thumbnail previews that source under the current order
+                    and tone, so switching source is not a jump. */}
+                <Strip
+                  colors={buildPalette({ ...color, source: s.id }).colors}
+                  surface={theme.surface}
+                />
+                <div className="tile__name">{s.name}</div>
             </Tile>
           ))}
         </div>
       </Group>
 
-      {/* Order and tone are independent axes, so exposing them separately gives
-          every combination without a wall of near-identical tiles. */}
-      <Group label={source?.tunable ? 'Pitch colours' : 'Fixed set'}>
-        {source?.tunable ? (
-          <>
-            <Field name="Order">
-              <Pills
-                options={HUE_ORDERS.map((o) => ({ value: o.id, label: o.name }))}
-                value={color.order}
-                onChange={(order) => patchColor({ order })}
-              />
-            </Field>
-            <Field name="Tone">
-              <Pills
-                options={TONES.map((t) => ({ value: t.id, label: t.name }))}
-                value={color.tone}
-                onChange={(tone) => patchColor({ tone })}
-              />
-            </Field>
-            <Field name="Rotate hue" value={`${color.rotate}\u00b0`}>
-              <Slider
-                label="Rotate hue"
-                min={0}
-                max={345}
-                step={15}
-                value={color.rotate}
-                onChange={(rotate) => patchColor({ rotate })}
-              />
-            </Field>
-            <Strip colors={palette.colors} surface={theme.surface} />
-            {hasHueShift(color) ? (
+      {tunable && (
+        <Group label="Scheme">
+              <Field name="A colour for every">
+                <Pills
+                  options={[
+                    { value: 'pitchClass', label: 'Semitone' },
+                    { value: 'letter', label: 'Letter name' },
+                  ]}
+                  value={color.basis}
+                  onChange={(basis) =>
+                    // Shift counts differ between bases, so old nudges would
+                    // land on the wrong notes. Cleared rather than reinterpreted.
+                    patchColor({
+                      basis,
+                      hueShift: undefined,
+                      order: basis === 'letter' && color.order === 'keys' ? 'fifths' : color.order,
+                    })
+                  }
+                />
+              </Field>
+
+              {color.basis === 'letter' && (
+                <Field name="Sharps & flats">
+                  <Pills
+                    options={ACCIDENTAL_SHADES.map((a) => ({ value: a.id, label: a.label }))}
+                    value={color.accidentalShade}
+                    onChange={(accidentalShade) => patchColor({ accidentalShade })}
+                  />
+                </Field>
+              )}
+
+              <Field name="Order">
+                <Pills
+                  options={orders.map((o) => ({ value: o.id, label: o.name }))}
+                  value={color.order}
+                  onChange={(order) => patchColor({ order })}
+                />
+              </Field>
+
+              <Field name="Tone">
+                <Pills
+                  options={TONES.map((t) => ({ value: t.id, label: t.name }))}
+                  value={color.tone}
+                  onChange={(tone) => patchColor({ tone })}
+                />
+              </Field>
+
+        <Field name="Rotate all" value={`${color.rotate}°`}>
+            <Slider
+              label="Rotate hue"
+              min={0}
+              max={345}
+              step={15}
+              value={color.rotate}
+              onChange={(rotate) => patchColor({ rotate })}
+            />
+          </Field>
+        </Group>
+      )}
+
+      {tunable ? (
+        <>
+          <div className="colour-lab__wheel">
+            <HueWheel
+              config={color}
+              colors={palette.colors}
+              names={names}
+              surface={theme.surface}
+              onShift={setShift}
+            />
+          </div>
+
+          <div className="colour-lab__list">
+            <div className="group__label">
+              {color.basis === 'letter' ? 'Seven letters' : 'Twelve semitones'}
+            </div>
+            <div className="note-rows">
+              {names.map((name, slot) => {
+                const shift = Math.round(color.hueShift?.[slot] ?? 0)
+                return (
+                  <div className="note-row" key={name}>
+                    <i style={{ background: palette.colors[slot] }} />
+                    {color.basis === 'letter' && palette.altColors && (
+                      <i
+                        className="note-row__alt"
+                        style={{ background: palette.altColors[slot] }}
+                        title={`${name}♯ / ${name}♭`}
+                      />
+                    )}
+                    <span className="note-row__name">{name}</span>
+                    <span className="note-row__hue">{Math.round(noteHue(color, slot))}°</span>
+                    <button
+                      className="note-row__reset"
+                      disabled={shift === 0}
+                      title={shift === 0 ? 'Not moved' : `Moved ${shift > 0 ? '+' : ''}${shift}°`}
+                      onClick={() => setShift(slot, 0)}
+                    >
+                      {shift === 0 ? '·' : `${shift > 0 ? '+' : ''}${shift}°`}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            {hasHueShift(color) && (
               <button
                 className="pill pill--solid"
                 onClick={() => patchColor({ hueShift: undefined })}
               >
-                Reset {countShifted(color)} moved note
-                {countShifted(color) === 1 ? '' : 's'}
+                Reset all {countShifted(color)}
               </button>
-            ) : (
-              <p className="note-text">
-                {HUE_ORDERS.find((o) => o.id === color.order)?.note}
-              </p>
             )}
-          </>
-        ) : (
-          <p className="note-text">
-            {source?.note} Order, tone and rotation apply to pitch colours only.
+          </div>
+        </>
+      ) : (
+        <div className="colour-lab__wheel">
+          <Strip colors={palette.colors} surface={theme.surface} tall />
+          <p className="note-text" style={{ marginTop: 16 }}>
+            {source?.note} Order, tone and the wheel apply to pitch colours only.
           </p>
-        )}
-      </Group>
-
-      <Group label={source?.tunable ? 'On the wheel' : 'In pitch order'}>
-        {source?.tunable ? (
-          <>
-            <HueWheel
-              config={color}
-              colors={palette.colors}
-              surface={theme.surface}
-              onShift={(pc, degrees) => {
-                const next = Array.from({ length: 12 }, (_, i) => color.hueShift?.[i] ?? 0)
-                next[pc] = degrees
-                patchColor({ hueShift: next })
-              }}
-            />
-            <p className="note-text">
-              Drag any note to move it round the wheel, or focus one and use the
-              arrow keys. Backspace puts it back.
-            </p>
-          </>
-        ) : (
-          <>
-            {/* A rainbow order reads here as a gradient, a fifths order as a
-                scatter — the difference made visible rather than described. */}
-            <Strip colors={palette.colors} surface={theme.surface} tall />
-            <p className="note-text">
-              {source?.cvdSafe
-                ? 'Safe for every kind of colour vision.'
-                : 'Twelve hues cannot all stay distinct for a colour-blind reader. Pair this with a shape, a label, or the hollow channel.'}
-            </p>
-          </>
-        )}
-      </Group>
+        </div>
+      )}
     </div>
   )
 }
