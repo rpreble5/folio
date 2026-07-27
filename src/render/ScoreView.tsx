@@ -6,6 +6,7 @@ import { dashArray, lineColor } from '../core/theme'
 import type { Layout, System } from './layout'
 import { NoteGlyph } from './NoteGlyph'
 import { CvdFilters, cvdFilterUrl, type CvdMode } from './cvd'
+import { TextureDefs, textureFill } from './textures'
 
 interface Props {
   score: Score
@@ -75,6 +76,7 @@ export function ScoreView({
   }, [layout, cfg.showKeyboard, cfg.pitchAxis, isStaff])
 
   const filter = cvdFilterUrl(cvd)
+  const pageFill = textureFill(cfg.pageTexture)
 
   return (
     <svg
@@ -89,8 +91,14 @@ export function ScoreView({
       }}
     >
       <CvdFilters />
+      <TextureDefs noteTexture={theme.encodings.texture} pageTexture={cfg.pageTexture} />
 
       <rect width="100%" height="100%" fill={surface.background} />
+      {/* Page grain sits under everything, and wants a much coarser scale than
+          the notes so it does not compete with them for the same channel. */}
+      {pageFill && (
+        <rect width="100%" height="100%" fill={pageFill} opacity={cfg.pageTexture.strength} />
+      )}
 
       <g filter={filter}>
         {layout.systems.map((system) => (
@@ -317,6 +325,9 @@ function SystemGroup({
                 accent={surface.accent}
                 filled={placed.style.filled}
                 hollowTint={encodings.outlineStyle === 'tinted' ? 0.22 : 0}
+                trail={encodings.trail}
+                texture={encodings.texture}
+                trailGrain={encodings.trailGrain}
               />
               {placed.style.labelText && layout.noteHeight >= 10 && (
                 <text

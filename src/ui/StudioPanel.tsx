@@ -12,7 +12,9 @@
 
 import { useState } from 'react'
 import { useStore } from '../state/store'
-import { PAGES, PRESETS } from '../core/presets'
+import { PAGES, PRESETS, TRAIL_PRESETS } from '../core/presets'
+import { NoteGlyph } from '../render/NoteGlyph'
+import { cyclesAcross } from '../render/textures'
 import {
   COLOR_SOURCES,
   HUE_ORDERS,
@@ -31,13 +33,17 @@ import { HueWheel } from './HueWheel'
 import {
   ANCHOR_OPTIONS,
   DASH_KINDS,
+  NO_TEXTURE,
   OUTLINE_TARGETS,
+  TEXTURE_KINDS,
   describeSelector,
   makeSurface,
   type LabelKind,
   type LineRole,
   type LineStyle,
   type OutlineWhat,
+  type TextureConfig,
+  type TrailConfig,
 } from '../core/theme'
 import { CVD_MODES, type CvdMode } from '../render/cvd'
 import { Field, Group, Pills, ShapeMark, Slider, Switch, Tile } from './controls'
@@ -452,17 +458,30 @@ function ColourTab() {
 
 function MarksTab() {
   const theme = useStore((s) => s.theme)
+  const layout = useStore((s) => s.theme.layout)
   const patchEncodings = useStore((s) => s.patchEncodings)
-  const shapeSet = SHAPE_SETS.find((s) => s.id === theme.encodings.shapeSet)
+  const { shapeSet: shapeSetId, trail, texture } = theme.encodings
+  const shapeSet = SHAPE_SETS.find((s) => s.id === shapeSetId)
+
+  const patchTrail = (patch: Partial<TrailConfig>) =>
+    patchEncodings({ trail: { ...trail, ...patch } })
+  const patchTexture = (patch: Partial<TextureConfig>) =>
+    patchEncodings({ texture: { ...texture, ...patch } })
+
+  // Texture stops reading as texture below roughly three cycles across a mark.
+  // Worth saying out loud rather than letting it be discovered as "looks bad".
+  const noteHeight = layout.laneHeight * (layout.mode === 'staff' ? 1.85 : 0.86)
+  const cycles = cyclesAcross(texture, noteHeight)
+  const tooFine = texture.kind !== 'none' && cycles < 2.2
 
   return (
-    <div className="columns columns--3">
+    <div className="columns columns--4">
       <Group label="Shape">
         <div className="tiles">
           {SHAPE_SETS.map((set) => (
             <Tile
               key={set.id}
-              selected={theme.encodings.shapeSet === set.id}
+              selected={shapeSetId === set.id}
               onClick={() => patchEncodings({ shapeSet: set.id })}
               title={set.note}
             >
@@ -478,9 +497,69 @@ function MarksTab() {
         <p className="note-text">{shapeSet?.note}</p>
       </Group>
 
-      {/* Fill is a third channel beside colour and shape, so what it marks is a
-          choice rather than a fixed rule. */}
-      <Group label="Fill">
+      {/* The trail carries duration. Head and trail are drawn as overlapping
+          shapes in one colour, so the melt works for any head — there is no
+          joint to compute, only a union. */}
+      <Group label="Trail">
+        <div className="tiles">
+          {TRAIL_PRESETS.map((t) => (
+            <Tile
+              key={t.id}
+              selected={sameTrail(trail, t.trail)}
+              onClick={() => patchTrail(t.trail)}
+              title={t.name}
+            >
+              <TrailMark trail={t.trail} />
+              <div className="tile__name">{t.name}</div>
+            </Tile>
+          ))}
+        </div>
+
+        <div className="slider-pair">
+        <Field name="Thickness" value={`${Math.round(trail.thickness * 100)}%`}>
+          <Slider
+            label="Trail thickness"
+            min={0}
+            max={1}
+            step={0.02}
+            value={trail.thickness}
+            onChange={(thickness) => patchTrail({ thickness })}
+          />
+        </Field>
+        <Field name="Taper" value={`${Math.round(trail.taper * 100)}%`}>
+          <Slider
+            label="Trail taper"
+            min={0}
+            max={1}
+            step={0.02}
+            value={trail.taper}
+            onChange={(taper) => patchTrail({ taper })}
+          />
+        </Field>
+        <Field name="Melt into note" value={`${Math.round(trail.melt * 100)}%`}>
+          <Slider
+            label="Trail melt"
+            min={0}
+            max={1}
+            step={0.02}
+            value={trail.melt}
+            onChange={(melt) => patchTrail({ melt })}
+          />
+        </Field>
+        <Field name="Strength" value={`${Math.round(trail.opacity * 100)}%`}>
+          <Slider
+            label="Trail strength"
+            min={0}
+            max={1}
+            step={0.05}
+            value={trail.opacity}
+            onChange={(opacity) => patchTrail({ opacity })}
+          />
+        </Field>
+        </div>
+      </Group>
+
+      <Group label="Fill & texture">
         <Field name="Draw hollow">
           <Pills
             options={OUTLINE_TARGETS.map((t) => ({ value: t.id, label: t.label }))}
@@ -489,7 +568,7 @@ function MarksTab() {
           />
         </Field>
         {theme.encodings.outlineWhat !== 'none' && (
-          <Field name="Style">
+          <Field name="Hollow style">
             <Pills
               options={[
                 { value: 'hollow', label: 'Outline' },
@@ -500,10 +579,61 @@ function MarksTab() {
             />
           </Field>
         )}
-        <p className="note-text">
-          A hollow note keeps its colour in the outline, so the pitch still
-          reads — the fill is spent on something else.
-        </p>
+
+        <Field name="Texture">
+          <Pills
+            options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}
+            value={texture.kind}
+            onChange={(kind) => patchTexture({ kind })}
+          />
+        </Field>
+
+        {texture.kind !== 'none' && (
+          <>
+            <Field name="Scale" value={`${texture.scale.toFixed(2)}×`}>
+              <Slider
+                label="Texture scale"
+                min={0.2}
+                max={2.5}
+                step={0.05}
+                value={texture.scale}
+                onChange={(scale) => patchTexture({ scale })}
+              />
+            </Field>
+            <Field name="Strength" value={`${Math.round(texture.strength * 100)}%`}>
+              <Slider
+                label="Texture strength"
+                min={0.05}
+                max={0.8}
+                step={0.05}
+                value={texture.strength}
+                onChange={(strength) => patchTexture({ strength })}
+              />
+            </Field>
+            <Field name="Ink">
+              <Pills
+                options={[
+                  { value: 'dark', label: 'Darken' },
+                  { value: 'light', label: 'Lighten' },
+                ]}
+                value={texture.ink}
+                onChange={(ink) => patchTexture({ ink })}
+              />
+            </Field>
+            <Switch
+              label="Grain builds along the trail"
+              checked={theme.encodings.trailGrain}
+              onChange={(trailGrain) => patchEncodings({ trailGrain })}
+            />
+            {tooFine && (
+              <p className="note-text warn">
+                At this note height the texture fits about {cycles.toFixed(1)} tiles across, so
+                it will read as noise rather than as texture. Make the notes taller or the
+                scale smaller.
+              </p>
+            )}
+          </>
+        )}
       </Group>
 
       <Group label="Text">
@@ -531,6 +661,42 @@ function MarksTab() {
         />
       </Group>
     </div>
+  )
+}
+
+const sameTrail = (a: TrailConfig, b: TrailConfig): boolean =>
+  Math.abs(a.thickness - b.thickness) < 0.02 &&
+  Math.abs(a.taper - b.taper) < 0.02 &&
+  Math.abs(a.melt - b.melt) < 0.02 &&
+  Math.abs(a.opacity - b.opacity) < 0.03
+
+/** A miniature note-and-trail, so a trail preset previews its own silhouette. */
+function TrailMark({ trail }: { trail: TrailConfig }) {
+  const w = 54
+  const h = 16
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+      <NoteGlyph
+        x={1}
+        y={1}
+        width={w - 2}
+        height={h - 2}
+        shape="circle"
+        fill="currentColor"
+        stroke="none"
+        strokeWidth={0}
+        opacity={1}
+        cornerRadius={3}
+        active={false}
+        selected={false}
+        accent="none"
+        filled
+        hollowTint={0}
+        trail={trail}
+        texture={NO_TEXTURE}
+        trailGrain={false}
+      />
+    </svg>
   )
 }
 
@@ -717,6 +883,35 @@ function PageTab() {
             </Tile>
           ))}
         </div>
+
+        {/* Page grain wants a coarser scale than the notes, or the two compete
+            for the same channel and the page wins by sheer area. */}
+        <Field name="Page texture">
+          <Pills
+            options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}
+            value={layout.pageTexture.kind}
+            onChange={(kind) =>
+              patchLayout({ pageTexture: { ...layout.pageTexture, kind } })
+            }
+          />
+        </Field>
+        {layout.pageTexture.kind !== 'none' && (
+          <Field
+            name="Grain strength"
+            value={`${Math.round(layout.pageTexture.strength * 100)}%`}
+          >
+            <Slider
+              label="Page texture strength"
+              min={0.02}
+              max={0.3}
+              step={0.02}
+              value={layout.pageTexture.strength}
+              onChange={(strength) =>
+                patchLayout({ pageTexture: { ...layout.pageTexture, strength } })
+              }
+            />
+          </Field>
+        )}
 
         <Switch
           label="Bar numbers"

@@ -214,6 +214,8 @@ export interface LayoutConfig {
   showBlackKeyRows: boolean
   lines: LineSet
   anchorOn: AnchorOn
+  /** Texture on the page itself, well below the notes' own scale. */
+  pageTexture: TextureConfig
 }
 
 /**
@@ -235,6 +237,61 @@ export const OUTLINE_TARGETS: { id: OutlineWhat; label: string }[] = [
   { id: 'longNotes', label: 'Long notes' },
 ]
 
+// ---------------------------------------------------------------------------
+// Trails
+// ---------------------------------------------------------------------------
+
+export type TrailCap = 'round' | 'flat'
+
+/**
+ * The stroke a note leaves for its duration.
+ *
+ * Head and trail are drawn as two overlapping shapes in the same colour, so
+ * what you see is their union. That is what makes the melt work for any head:
+ * there is no joint to compute between a triangle and a bar, only a silhouette
+ * where the trail emerges from inside the head.
+ *
+ * It also collapses a fork — a capsule that filled its whole duration and a
+ * notehead with a separate tail were two renderers. Now a capsule is just a
+ * trail at full thickness with no taper.
+ */
+export interface TrailConfig {
+  /** Fraction of the note's height at its thickest. */
+  thickness: number
+  /** 0 keeps an even weight, 1 narrows to nothing by the end. */
+  taper: number
+  /** How far the trail swells to meet the head. 1 is a full fillet. */
+  melt: number
+  cap: TrailCap
+  opacity: number
+}
+
+// ---------------------------------------------------------------------------
+// Texture
+// ---------------------------------------------------------------------------
+
+export type TextureKind = 'none' | 'grain' | 'dots' | 'lines' | 'cross' | 'weave'
+
+export const TEXTURE_KINDS: { id: TextureKind; label: string }[] = [
+  { id: 'none', label: 'None' },
+  { id: 'grain', label: 'Grain' },
+  { id: 'dots', label: 'Dots' },
+  { id: 'lines', label: 'Hatch' },
+  { id: 'cross', label: 'Cross' },
+  { id: 'weave', label: 'Weave' },
+]
+
+export interface TextureConfig {
+  kind: TextureKind
+  /** Tile scale. Below roughly three cycles inside a mark it reads as noise. */
+  scale: number
+  strength: number
+  /** Whether the texture lightens or darkens what it sits on. */
+  ink: 'light' | 'dark'
+}
+
+export const NO_TEXTURE: TextureConfig = { kind: 'none', scale: 1, strength: 0.3, ink: 'dark' }
+
 export interface Encodings {
   color: ColorConfig
   shapeSet: string
@@ -244,6 +301,14 @@ export interface Encodings {
   sizeByVelocity: boolean
   outlineWhat: OutlineWhat
   outlineStyle: OutlineStyle
+  trail: TrailConfig
+  texture: TextureConfig
+  /**
+   * Ramp the note's texture along its trail, so a held note visibly breaks up
+   * as it rings. A real note decays, so the grain is describing something true
+   * rather than decorating.
+   */
+  trailGrain: boolean
 }
 
 export interface Surface {

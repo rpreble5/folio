@@ -7,8 +7,23 @@
  * toggle: an accessible default that nobody understands gets switched off.
  */
 
-import type { LineSet, LineStyle, Surface, Theme } from './theme'
-import { makeSurface } from './theme'
+import type { LineSet, LineStyle, Surface, TextureConfig, Theme, TrailConfig } from './theme'
+import { NO_TEXTURE, makeSurface } from './theme'
+
+/** Trail shapes worth starting from. A capsule bar is just the first of these. */
+export const TRAIL_PRESETS: { id: string; name: string; trail: TrailConfig }[] = [
+  { id: 'bar', name: 'Bar', trail: { thickness: 1, taper: 0, melt: 1, cap: 'round', opacity: 1 } },
+  { id: 'ribbon', name: 'Ribbon', trail: { thickness: 0.42, taper: 0, melt: 0.65, cap: 'round', opacity: 0.75 } },
+  { id: 'taper', name: 'Taper', trail: { thickness: 0.7, taper: 0.62, melt: 0.85, cap: 'round', opacity: 0.8 } },
+  { id: 'drop', name: 'Teardrop', trail: { thickness: 0.9, taper: 1, melt: 1, cap: 'round', opacity: 0.85 } },
+  { id: 'whisker', name: 'Whisker', trail: { thickness: 0.16, taper: 0.4, melt: 0.3, cap: 'round', opacity: 0.6 } },
+  { id: 'none', name: 'None', trail: { thickness: 0, taper: 0, melt: 0, cap: 'round', opacity: 0 } },
+]
+
+const trailOf = (id: string): TrailConfig =>
+  ({ ...(TRAIL_PRESETS.find((t) => t.id === id) ?? TRAIL_PRESETS[0]).trail })
+
+const texture = (over: Partial<TextureConfig> = {}): TextureConfig => ({ ...NO_TEXTURE, ...over })
 
 /**
  * Pages to start from. Any colour works — the rest of the surface is derived
@@ -74,6 +89,7 @@ const baseLayout = {
   showBlackKeyRows: true,
   lines: rollLines(),
   anchorOn: 'octave' as const,
+  pageTexture: texture(),
 }
 
 export interface PresetMeta {
@@ -100,6 +116,9 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       sizeByVelocity: false,
       outlineWhat: 'accidentals',
       outlineStyle: 'tinted',
+      trail: trailOf('bar'),
+      texture: texture(),
+      trailGrain: false,
     },
     surface: { ...DARK_SURFACE },
     rules: [],
@@ -120,6 +139,9 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       sizeByVelocity: false,
       outlineWhat: 'none',
       outlineStyle: 'tinted',
+      trail: trailOf('bar'),
+      texture: texture(),
+      trailGrain: false,
     },
     surface: { ...DARK_SURFACE },
     rules: [],
@@ -141,6 +163,9 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       sizeByVelocity: false,
       outlineWhat: 'outsideKey',
       outlineStyle: 'tinted',
+      trail: trailOf('bar'),
+      texture: texture(),
+      trailGrain: false,
     },
     surface: { ...DARK_SURFACE },
     rules: [],
@@ -162,6 +187,9 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       sizeByVelocity: true,
       outlineWhat: 'none',
       outlineStyle: 'tinted',
+      trail: trailOf('taper'),
+      texture: texture(),
+      trailGrain: true,
     },
     surface: { ...DARK_SURFACE },
     rules: [],
@@ -189,6 +217,9 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       sizeByVelocity: false,
       outlineWhat: 'accidentals',
       outlineStyle: 'hollow',
+      trail: trailOf('bar'),
+      texture: texture({ kind: 'grain', strength: 0.16, scale: 0.8 }),
+      trailGrain: false,
     },
     surface: { ...PAPER_SURFACE },
     rules: [],
@@ -222,6 +253,9 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       sizeByVelocity: false,
       outlineWhat: 'accidentals',
       outlineStyle: 'hollow',
+      trail: trailOf('bar'),
+      texture: texture(),
+      trailGrain: false,
     },
     surface: { ...PAPER_SURFACE },
     rules: [],

@@ -452,6 +452,10 @@ button {
      stretch to full width and read as a stray form control. fit-content rather
      than align-self, so vertical centring in the topbar still applies. */
   width: fit-content;
+  max-width: 100%;
+  /* Wrap rather than spill into the neighbouring column when a set has more
+     options than its column is wide. */
+  flex-wrap: wrap;
   gap: 4px;
   background: var(--surface-2);
   border-radius: 9px;
@@ -1246,4 +1250,28 @@ button {
   height: 8px;
   width: 8px;
   border-radius: 50%;
+}
+
+.columns--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--gap-lg);
+}
+
+/* A warning that informs rather than restricts — the control stays usable. */
+.note-text.warn {
+  color: #d8b48a;
+}
+
+@media (max-width: 1320px) {
+  .columns--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Trail has four numbers that are read together; two columns halves its
+   height and keeps the whole group above the fold. */
+.slider-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 18px;
 }

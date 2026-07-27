@@ -1,15 +1,24 @@
 /**
- * Drawing a single note.
+ * Drawing a single note: a head, and a trail for its duration.
  *
- * Shapes that carry meaning (a triangle for a sharp, a hexagon for the tonic)
- * are drawn as a fixed-size *head* plus a *tail* that runs the note's duration,
- * rather than stretching the shape itself. A stretched triangle stops reading
- * as a triangle, which would quietly destroy the very channel the shape was
- * chosen to provide. Capsules and rectangles have no such problem, so they fill
- * the whole span.
+ * Head and trail are two overlapping shapes in the same colour, so what you see
+ * is their union. That is what lets the trail melt into any head — there is no
+ * joint to compute between a triangle and a bar, only a silhouette where the
+ * trail emerges from inside the head.
+ *
+ * It also removes a fork. A capsule used to fill its whole duration while a
+ * notehead got a separate tail; those were two renderers. Now a capsule is a
+ * head with a trail at full thickness and no taper, and the old look falls out
+ * as a default.
+ *
+ * Shapes that carry meaning — a triangle for a sharp, a hexagon for the tonic —
+ * are never stretched to fill a duration, because a stretched triangle stops
+ * reading as a triangle and takes the channel with it.
  */
 
 import type { ShapeKind } from '../core/palettes'
+import type { TextureConfig, TrailConfig } from '../core/theme'
+import { textureFill } from './textures'
 
 interface Props {
   x: number
@@ -25,12 +34,14 @@ interface Props {
   active: boolean
   selected: boolean
   accent: string
-  /** False draws the note hollow, its colour moved into the outline. */
   filled: boolean
-  /** Fill tint kept behind a hollow note, 0 for a true outline. */
   hollowTint: number
+  trail: TrailConfig
+  texture: TextureConfig
+  trailGrain: boolean
 }
 
+/** Heads drawn at a fixed size, with the duration carried by the trail. */
 const HEAD_SHAPES = new Set<ShapeKind>([
   'circle',
   'hexagon',
@@ -40,7 +51,7 @@ const HEAD_SHAPES = new Set<ShapeKind>([
   'chevron',
 ])
 
-function headPath(shape: ShapeKind, x: number, y: number, size: number): string {
+function headPath(shape: ShapeKind, x: number, y: number, size: number, radius: number): string {
   const cx = x + size / 2
   const cy = y + size / 2
   const r = size / 2
@@ -58,9 +69,50 @@ function headPath(shape: ShapeKind, x: number, y: number, size: number): string 
       const w = r * 0.55
       return `M ${cx - w} ${cy - r} L ${cx + w} ${cy - r} L ${cx + r} ${cy} L ${cx + w} ${cy + r} L ${cx - w} ${cy + r} L ${cx - r} ${cy} Z`
     }
-    default:
-      return ''
+    case 'circle':
+      return `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
+    case 'capsule':
+    case 'rect': {
+      const rad = shape === 'capsule' ? r : Math.min(radius, r)
+      return roundedRect(x, y, size, size, rad)
+    }
   }
+}
+
+function roundedRect(x: number, y: number, w: number, h: number, r: number): string {
+  const rr = Math.min(r, w / 2, h / 2)
+  return (
+    `M ${x + rr} ${y} H ${x + w - rr} A ${rr} ${rr} 0 0 1 ${x + w} ${y + rr}` +
+    ` V ${y + h - rr} A ${rr} ${rr} 0 0 1 ${x + w - rr} ${y + h}` +
+    ` H ${x + rr} A ${rr} ${rr} 0 0 1 ${x} ${y + h - rr}` +
+    ` V ${y + rr} A ${rr} ${rr} 0 0 1 ${x + rr} ${y} Z`
+  )
+}
+
+/**
+ * The trail, as a single filled path.
+ *
+ * It starts at the head's centre rather than its edge, so its leading end is
+ * hidden inside the head and the union has no seam whatever the head's outline.
+ * The cubic control points sit far enough in to give the swell a soft shoulder
+ * instead of a corner.
+ */
+function trailPath(
+  x0: number,
+  x1: number,
+  cy: number,
+  h0: number,
+  h1: number,
+  cap: 'round' | 'flat',
+): string {
+  const bend = Math.max(4, (x1 - x0) * 0.42)
+  const top = `M ${x0} ${cy - h0} C ${x0 + bend} ${cy - h0} ${x1 - bend} ${cy - h1} ${x1} ${cy - h1}`
+  const end =
+    cap === 'round' && h1 > 0.4
+      ? ` A ${h1} ${h1} 0 0 1 ${x1} ${cy + h1}`
+      : ` L ${x1} ${cy + h1}`
+  const bottom = ` C ${x1 - bend} ${cy + h1} ${x0 + bend} ${cy + h0} ${x0} ${cy + h0} Z`
+  return top + end + bottom
 }
 
 export function NoteGlyph({
@@ -79,71 +131,57 @@ export function NoteGlyph({
   accent,
   filled,
   hollowTint,
+  trail,
+  texture,
+  trailGrain,
 }: Props) {
-  const usesHead = HEAD_SHAPES.has(shape)
   const headSize = height
-  const tailHeight = Math.max(3, height * 0.34)
-  const tailStart = x + headSize * 0.72
-  const tailWidth = Math.max(0, width - headSize * 0.72)
+  const half = height / 2
+  const cy = y + half
+  const head = headPath(shape, x, y, headSize, cornerRadius)
 
+  const thickness = Math.max(0, Math.min(1, trail.thickness))
+  const h0 = half * (thickness + (1 - thickness) * trail.melt)
+  const h1 = half * thickness * (1 - trail.taper)
+  const trailEnd = x + Math.max(width, headSize)
+  const trailStart = x + headSize / 2
+  const hasTrail = trail.opacity > 0 && thickness > 0 && trailEnd - trailStart > 2
+
+  const path = hasTrail ? trailPath(trailStart, trailEnd, cy, h0, h1, trail.cap) : ''
+  const pattern = textureFill(texture)
+
+  const shapeFill = filled ? fill : 'none'
+  const shapeFillOpacity = filled ? 1 : hollowTint
   const common = {
-    fill: filled ? fill : 'none',
-    // A hollow note keeps a faint wash of its own colour when tinted, which
-    // stops thin outlines from disappearing against a busy page.
-    fillOpacity: filled ? 1 : hollowTint,
+    fill: !filled && hollowTint > 0 ? fill : shapeFill,
+    fillOpacity: shapeFillOpacity,
     stroke: strokeWidth > 0 ? stroke : 'none',
     strokeWidth,
-    opacity,
   }
-
-  // fill:'none' cannot be tinted, so a tinted hollow note keeps its colour and
-  // leans on fillOpacity instead.
-  if (!filled && hollowTint > 0) common.fill = fill
 
   return (
     <g
       className={active ? 'note note--active' : 'note'}
+      opacity={opacity}
       style={selected ? { filter: `drop-shadow(0 0 0 2px ${accent})` } : undefined}
     >
-      {usesHead && tailWidth > 2 && (
-        <rect
-          x={tailStart}
-          y={y + height / 2 - tailHeight / 2}
-          width={tailWidth}
-          height={tailHeight}
-          rx={tailHeight / 2}
-          fill={fill}
-          // The tail is already a faint version of the note, so a hollow note
-          // fades it further rather than outlining it — an outlined hairline
-          // would read as noise.
-          opacity={opacity * (filled ? 0.45 : 0.24)}
-        />
+      {/* Trail first, so the head sits over the shoulder of the swell. */}
+      {hasTrail && (
+        <>
+          <path d={path} {...common} opacity={trail.opacity} />
+          {pattern && (
+            <path
+              d={path}
+              fill={pattern}
+              opacity={trail.opacity * texture.strength}
+              mask={trailGrain ? 'url(#trail-ramp)' : undefined}
+            />
+          )}
+        </>
       )}
 
-      {shape === 'circle' && (
-        <ellipse
-          cx={x + headSize / 2}
-          cy={y + height / 2}
-          rx={headSize / 2}
-          ry={height / 2}
-          {...common}
-        />
-      )}
-
-      {usesHead && shape !== 'circle' && (
-        <path d={headPath(shape, x, y, headSize)} {...common} />
-      )}
-
-      {!usesHead && (
-        <rect
-          x={x}
-          y={y}
-          width={Math.max(width, 4)}
-          height={height}
-          rx={shape === 'capsule' ? height / 2 : cornerRadius}
-          {...common}
-        />
-      )}
+      <path d={head} {...common} />
+      {pattern && <path d={head} fill={pattern} opacity={texture.strength} />}
 
       {selected && (
         <rect
@@ -161,3 +199,5 @@ export function NoteGlyph({
     </g>
   )
 }
+
+export { HEAD_SHAPES }
