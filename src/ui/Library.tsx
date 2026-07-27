@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react'
 import { LIBRARY } from '../core/library'
 import { ACCEPTED_TYPES, importFile } from '../io/import'
-import { getPalette } from '../core/palettes'
+import { DEFAULT_COLOR, buildPalette } from '../core/palettes'
 import { pitchClass } from '../core/pitch'
 import { useStore } from '../state/store'
 import type { Score } from '../core/types'
 
 /** A few bars of the real piece, coloured — a hint at what opens. */
 function Thumb({ score }: { score: Score }) {
-  const palette = getPalette('spectral')
+  const palette = buildPalette(DEFAULT_COLOR)
   const sample = score.notes.slice(0, 24)
   const low = Math.min(...sample.map((n) => n.midi))
   const high = Math.max(...sample.map((n) => n.midi))

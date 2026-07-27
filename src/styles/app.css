@@ -283,10 +283,9 @@ button {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
 }
 
-/* Colour carries far more options than shape or text, so it gets the room
-   rather than forcing its tiles to wrap into a fourth row. */
-.columns--notes {
-  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1.05fr);
+/* The source picker holds six thumbnails, so it takes the widest share. */
+.columns--colour {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.15fr) minmax(0, 1fr);
 }
 
 .group {
@@ -583,6 +582,18 @@ button {
   width: auto;
   height: 13px;
   border-radius: 2px;
+}
+
+/* The live palette readout, shown larger than the picker thumbnails. */
+.tile__swatches--tall {
+  padding: 5px;
+  border-radius: 7px;
+  gap: 2px;
+}
+
+.tile__swatches--tall i {
+  height: 24px;
+  border-radius: 3px;
 }
 
 .tile__shapes {

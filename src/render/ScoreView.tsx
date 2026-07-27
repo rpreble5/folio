@@ -296,6 +296,8 @@ function SystemGroup({
                 active={active}
                 selected={selectedId === placed.note.id}
                 accent={surface.accent}
+                filled={placed.style.filled}
+                hollowTint={encodings.outlineStyle === 'tinted' ? 0.22 : 0}
               />
               {placed.style.labelText && layout.noteHeight >= 10 && (
                 <text

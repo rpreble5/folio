@@ -6,7 +6,9 @@ import { PRESETS, getPreset } from '../core/presets'
 import { LIBRARY } from '../core/library'
 import type { CvdMode } from '../render/cvd'
 
-const STORAGE_KEY = 'folio.customThemes.v1'
+// v2: colour became a {source, order, tone, rotate} config and the chromatic
+// ring became the outline channel, so v1 themes no longer load.
+const STORAGE_KEY = 'folio.customThemes.v2'
 
 function loadCustomThemes(): Theme[] {
   try {

@@ -149,6 +149,25 @@ export function NotePopover({ x, y }: Props) {
           ))}
         </div>
       </Field>
+
+      <Field name="Fill">
+        <div className="pills pills--fill">
+          <button
+            className="pill"
+            aria-pressed={current.filled}
+            onClick={() => addRule(selector, { filled: true })}
+          >
+            Solid
+          </button>
+          <button
+            className="pill"
+            aria-pressed={!current.filled}
+            onClick={() => addRule(selector, { filled: false })}
+          >
+            Hollow
+          </button>
+        </div>
+      </Field>
     </div>
   )
 }

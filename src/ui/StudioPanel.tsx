@@ -13,16 +13,31 @@
 import { useState } from 'react'
 import { useStore } from '../state/store'
 import { PRESETS } from '../core/presets'
-import { PALETTES, SHAPE_SETS, getPalette } from '../core/palettes'
-import { describeSelector, type LabelKind } from '../core/theme'
+import {
+  COLOR_SOURCES,
+  HUE_ORDERS,
+  SHAPE_SETS,
+  TONES,
+  buildPalette,
+  type ColorConfig,
+} from '../core/palettes'
+import {
+  OUTLINE_TARGETS,
+  describeSelector,
+  type LabelKind,
+  type OutlineWhat,
+} from '../core/theme'
 import { CVD_MODES, type CvdMode } from '../render/cvd'
 import { Field, Group, Pills, ShapeMark, Slider, Switch, Tile } from './controls'
 
-type Tab = 'styles' | 'notes' | 'page'
+type Tab = 'styles' | 'colour' | 'marks' | 'page'
 
+// Colour started inside Marks and outgrew it once order, tone and rotation
+// became separate axes. Four tabs, each still one concern.
 const TABS: { id: Tab; label: string }[] = [
   { id: 'styles', label: 'Styles' },
-  { id: 'notes', label: 'Notes' },
+  { id: 'colour', label: 'Colour' },
+  { id: 'marks', label: 'Marks' },
   { id: 'page', label: 'Page' },
 ]
 
@@ -66,7 +81,8 @@ export function StudioPanel() {
       {/* Keyed so switching tabs replays the entrance transition. */}
       <div className="panel__body" role="tabpanel" key={tab}>
         {tab === 'styles' && <StylesTab />}
-        {tab === 'notes' && <NotesTab />}
+        {tab === 'colour' && <ColourTab />}
+        {tab === 'marks' && <MarksTab />}
         {tab === 'page' && <PageTab />}
       </div>
     </section>
@@ -100,7 +116,7 @@ function StylesTab() {
       <Group label="Start from">
         <div className="tiles">
           {PRESETS.map((preset) => {
-            const palette = getPalette(preset.encodings.palette)
+            const palette = buildPalette(preset.encodings.color)
             return (
               <Tile
                 key={preset.id}
@@ -109,14 +125,7 @@ function StylesTab() {
                 onClick={() => applyPreset(preset.id)}
                 title={preset.description}
               >
-                <div
-                  className="tile__swatches"
-                  style={{ background: preset.surface.background }}
-                >
-                  {spread(palette.colors, preset.surface.text).map((color, i) => (
-                    <i key={i} style={{ background: color }} />
-                  ))}
-                </div>
+                <Strip colors={palette.colors} surface={preset.surface} />
                 <div className="tile__name">{preset.name}</div>
                 {preset.accessible && <div className="tile__badge">{preset.accessible}</div>}
               </Tile>
@@ -224,45 +233,102 @@ function StylesTab() {
 
 // ---------------------------------------------------------------------------
 
-function NotesTab() {
+function ColourTab() {
   const theme = useStore((s) => s.theme)
   const patchEncodings = useStore((s) => s.patchEncodings)
-  const palette = getPalette(theme.encodings.palette)
-  const shapeSet = SHAPE_SETS.find((s) => s.id === theme.encodings.shapeSet)
+  const color = theme.encodings.color
+  const palette = buildPalette(color)
+  const source = COLOR_SOURCES.find((s) => s.id === color.source)
+  const patchColor = (patch: Partial<ColorConfig>) =>
+    patchEncodings({ color: { ...color, ...patch } })
 
   return (
-    <div className="columns columns--3 columns--notes">
-      <Group label="Colour">
+    <div className="columns columns--3 columns--colour">
+      <Group label="Colour by">
         <div className="tiles">
-          {PALETTES.map((p) => (
+          {COLOR_SOURCES.map((s) => (
             <Tile
-              key={p.id}
+              key={s.id}
               className="palette-tile"
-              selected={theme.encodings.palette === p.id}
-              onClick={() => patchEncodings({ palette: p.id })}
-              title={p.note}
+              selected={color.source === s.id}
+              onClick={() => patchColor({ source: s.id })}
+              title={s.note}
             >
-              {/* Every colour, in pitch order. A palette whose hues follow
-                  pitch reads here as a gradient; one ordered by fifths reads
-                  as a scatter — which is exactly the difference that matters. */}
-              <div
-                className="tile__swatches tile__swatches--strip"
-                style={{ background: theme.surface.background }}
-              >
-                {p.colors.map((color, i) => (
-                  <i
-                    key={i}
-                    style={{ background: color === '@ink' ? theme.surface.text : color }}
-                  />
-                ))}
-              </div>
-              <div className="tile__name">{p.name}</div>
+              {/* Each thumbnail previews that source under the *current* order
+                  and tone, so switching source does not feel like a jump. */}
+              <Strip
+                colors={buildPalette({ ...color, source: s.id }).colors}
+                surface={theme.surface}
+              />
+              <div className="tile__name">{s.name}</div>
             </Tile>
           ))}
         </div>
-        <p className="note-text">{palette.note}</p>
       </Group>
 
+      {/* Order and tone are independent axes, so exposing them separately gives
+          every combination without a wall of near-identical tiles. */}
+      <Group label={source?.tunable ? 'Pitch colours' : 'Fixed set'}>
+        {source?.tunable ? (
+          <>
+            <Field name="Order">
+              <Pills
+                options={HUE_ORDERS.map((o) => ({ value: o.id, label: o.name }))}
+                value={color.order}
+                onChange={(order) => patchColor({ order })}
+              />
+            </Field>
+            <Field name="Tone">
+              <Pills
+                options={TONES.map((t) => ({ value: t.id, label: t.name }))}
+                value={color.tone}
+                onChange={(tone) => patchColor({ tone })}
+              />
+            </Field>
+            <Field name="Rotate hue" value={`${color.rotate}\u00b0`}>
+              <Slider
+                label="Rotate hue"
+                min={0}
+                max={345}
+                step={15}
+                value={color.rotate}
+                onChange={(rotate) => patchColor({ rotate })}
+              />
+            </Field>
+            <p className="note-text">
+              {HUE_ORDERS.find((o) => o.id === color.order)?.note}
+            </p>
+          </>
+        ) : (
+          <p className="note-text">
+            {source?.note} Order, tone and rotation apply to pitch colours only.
+          </p>
+        )}
+      </Group>
+
+      <Group label="In pitch order">
+        {/* A rainbow order reads here as a gradient, a fifths order as a
+            scatter — the difference made visible rather than described. */}
+        <Strip colors={palette.colors} surface={theme.surface} tall />
+        <p className="note-text">
+          {source?.cvdSafe
+            ? 'Safe for every kind of colour vision.'
+            : 'Twelve hues cannot all stay distinct for a colour-blind reader. Pair this with a shape, a label, or the hollow channel — and check it under Styles.'}
+        </p>
+      </Group>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+function MarksTab() {
+  const theme = useStore((s) => s.theme)
+  const patchEncodings = useStore((s) => s.patchEncodings)
+  const shapeSet = SHAPE_SETS.find((s) => s.id === theme.encodings.shapeSet)
+
+  return (
+    <div className="columns columns--3">
       <Group label="Shape">
         <div className="tiles">
           {SHAPE_SETS.map((set) => (
@@ -284,6 +350,34 @@ function NotesTab() {
         <p className="note-text">{shapeSet?.note}</p>
       </Group>
 
+      {/* Fill is a third channel beside colour and shape, so what it marks is a
+          choice rather than a fixed rule. */}
+      <Group label="Fill">
+        <Field name="Draw hollow">
+          <Pills
+            options={OUTLINE_TARGETS.map((t) => ({ value: t.id, label: t.label }))}
+            value={theme.encodings.outlineWhat}
+            onChange={(outlineWhat: OutlineWhat) => patchEncodings({ outlineWhat })}
+          />
+        </Field>
+        {theme.encodings.outlineWhat !== 'none' && (
+          <Field name="Style">
+            <Pills
+              options={[
+                { value: 'hollow', label: 'Outline' },
+                { value: 'tinted', label: 'Tinted' },
+              ]}
+              value={theme.encodings.outlineStyle}
+              onChange={(outlineStyle) => patchEncodings({ outlineStyle })}
+            />
+          </Field>
+        )}
+        <p className="note-text">
+          A hollow note keeps its colour in the outline, so the pitch still
+          reads — the fill is spent on something else.
+        </p>
+      </Group>
+
       <Group label="Text">
         <Field name="Inside each note">
           <Pills
@@ -302,11 +396,6 @@ function NotesTab() {
             onChange={(labelScale) => patchEncodings({ labelScale })}
           />
         </Field>
-        <Switch
-          label="Ring notes outside the key"
-          checked={theme.encodings.outlineChromatics}
-          onChange={(outlineChromatics) => patchEncodings({ outlineChromatics })}
-        />
         <Switch
           label="Louder notes are larger"
           checked={theme.encodings.sizeByVelocity}
@@ -449,11 +538,24 @@ function PageTab() {
   )
 }
 
-/** Even sample across a palette, so a two-colour set still fills the strip. */
-function spread(colors: string[], ink: string): string[] {
-  const resolved = colors.map((c) => (c === '@ink' ? ink : c))
-  if (resolved.length <= 4) {
-    return Array.from({ length: 4 }, (_, i) => resolved[i % resolved.length])
-  }
-  return [0, 2, 5, 7, 9, 11].map((i) => resolved[i % resolved.length])
+/** Every colour in the palette, in order, on the score's own page colour. */
+function Strip({
+  colors,
+  surface,
+  tall = false,
+}: {
+  colors: string[]
+  surface: { background: string; text: string }
+  tall?: boolean
+}) {
+  return (
+    <div
+      className={`tile__swatches tile__swatches--strip${tall ? ' tile__swatches--tall' : ''}`}
+      style={{ background: surface.background }}
+    >
+      {colors.map((color, i) => (
+        <i key={i} style={{ background: color === '@ink' ? surface.text : color }} />
+      ))}
+    </div>
+  )
 }

@@ -10,10 +10,12 @@
 import type { Hand, KeyMark, NoteEvent } from './types'
 import { degreeLabel, noteName, octaveOf, pitchClass, scaleDegree, solfege } from './pitch'
 import {
+  type ColorConfig,
   type ShapeKind,
+  buildPalette,
   colorFor,
-  getPalette,
   getShapeSet,
+  isNatural,
   onColorFor,
   shapeFor,
 } from './palettes'
@@ -100,6 +102,7 @@ export interface StyleDecl {
   opacity?: number
   /** Multiplier on the note's drawn size. */
   scale?: number
+  filled?: boolean
 }
 
 export interface Rule {
@@ -119,6 +122,8 @@ export interface ResolvedStyle {
   labelColor: string
   opacity: number
   scale: number
+  /** False draws the note hollow, with its colour moved to the outline. */
+  filled: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -153,15 +158,34 @@ export interface LayoutConfig {
   showBlackKeyRows: boolean
 }
 
+/**
+ * Which notes render hollow instead of solid.
+ *
+ * Fill is a third channel alongside colour and shape, and like them, what it
+ * encodes is a choice rather than a fixed rule. Outlining the accidentals is
+ * the obvious use, but the same treatment reads just as well applied to notes
+ * outside the key, or to one hand.
+ */
+export type OutlineWhat = 'none' | 'accidentals' | 'outsideKey' | 'leftHand' | 'longNotes'
+export type OutlineStyle = 'hollow' | 'tinted'
+
+export const OUTLINE_TARGETS: { id: OutlineWhat; label: string }[] = [
+  { id: 'none', label: 'Nothing' },
+  { id: 'accidentals', label: 'Sharps & flats' },
+  { id: 'outsideKey', label: 'Outside the key' },
+  { id: 'leftHand', label: 'Left hand' },
+  { id: 'longNotes', label: 'Long notes' },
+]
+
 export interface Encodings {
-  palette: string
+  color: ColorConfig
   shapeSet: string
   label: LabelKind
   labelScale: number
   /** Louder notes render slightly larger. */
   sizeByVelocity: boolean
-  /** Ring every non-scale note. A third channel, free of colour. */
-  outlineChromatics: boolean
+  outlineWhat: OutlineWhat
+  outlineStyle: OutlineStyle
 }
 
 export interface Surface {
@@ -214,29 +238,51 @@ const DIATONIC_MINOR = new Set([0, 2, 3, 5, 7, 8, 10])
  * rule in ascending specificity order. Ties break on rule order, so a later
  * rule of equal weight wins — the same "last one wins" intuition as CSS.
  */
-export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): ResolvedStyle {
-  const palette = getPalette(theme.encodings.palette)
-  const shapeSet = getShapeSet(theme.encodings.shapeSet)
+/** Does this note match the current outline target? */
+function shouldOutline(note: NoteEvent, theme: Theme, key: KeyMark): boolean {
+  const scale = key.mode === 'minor' ? DIATONIC_MINOR : DIATONIC_MAJOR
 
-  const scale = DIATONIC_MINOR.has(0) && key.mode === 'minor' ? DIATONIC_MINOR : DIATONIC_MAJOR
-  const chromatic = !scale.has(scaleDegree(note.midi, key))
+  switch (theme.encodings.outlineWhat) {
+    case 'none':
+      return false
+    case 'accidentals':
+      // Written spelling wins, but a black key from a MIDI import has none.
+      return note.spelling.alter !== 0 || !isNatural(((note.midi % 12) + 12) % 12)
+    case 'outsideKey':
+      return !scale.has(scaleDegree(note.midi, key))
+    case 'leftHand':
+      return note.hand === 'left'
+    case 'longNotes':
+      return note.duration >= 2
+  }
+}
+
+export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): ResolvedStyle {
+  const palette = buildPalette(theme.encodings.color)
+  const shapeSet = getShapeSet(theme.encodings.shapeSet)
 
   const rawFill = colorFor(palette, note, key)
   const fill = rawFill === '@ink' ? theme.surface.text : rawFill
+  const outlined = shouldOutline(note, theme, key)
 
   const base: ResolvedStyle = {
     fill,
-    stroke:
-      theme.encodings.outlineChromatics && chromatic ? theme.surface.text : 'transparent',
-    strokeWidth: theme.encodings.outlineChromatics && chromatic ? 1.5 : 0,
+    // A hollow note carries its colour in the outline instead, so the pitch
+    // encoding survives the treatment rather than being spent on it.
+    stroke: outlined ? fill : 'transparent',
+    strokeWidth: outlined ? 2 : 0,
     shape: shapeFor(shapeSet, note, key),
     labelText: labelFor(theme.encodings.label, note, key),
     labelColor: (() => {
+      // A hollow note has the page behind it, so a label sitting inside needs
+      // the page's text colour rather than one chosen to contrast with the fill.
+      if (outlined) return theme.surface.text
       const on = onColorFor(palette, note, key)
       return on === '@paper' ? theme.surface.background : on
     })(),
     opacity: 1,
     scale: theme.encodings.sizeByVelocity ? 0.82 + note.velocity * 0.28 : 1,
+    filled: !outlined,
   }
 
   const applicable = theme.rules
@@ -258,6 +304,11 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
     if (s.labelColor !== undefined) base.labelColor = s.labelColor
     if (s.opacity !== undefined) base.opacity = s.opacity
     if (s.scale !== undefined) base.scale = s.scale
+    if (s.filled !== undefined) {
+      base.filled = s.filled
+      base.stroke = s.filled ? 'transparent' : base.fill
+      base.strokeWidth = s.filled ? 0 : 2
+    }
   }
 
   return base

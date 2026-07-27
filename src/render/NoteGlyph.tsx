@@ -25,6 +25,10 @@ interface Props {
   active: boolean
   selected: boolean
   accent: string
+  /** False draws the note hollow, its colour moved into the outline. */
+  filled: boolean
+  /** Fill tint kept behind a hollow note, 0 for a true outline. */
+  hollowTint: number
 }
 
 const HEAD_SHAPES = new Set<ShapeKind>([
@@ -73,6 +77,8 @@ export function NoteGlyph({
   active,
   selected,
   accent,
+  filled,
+  hollowTint,
 }: Props) {
   const usesHead = HEAD_SHAPES.has(shape)
   const headSize = height
@@ -81,11 +87,18 @@ export function NoteGlyph({
   const tailWidth = Math.max(0, width - headSize * 0.72)
 
   const common = {
-    fill,
+    fill: filled ? fill : 'none',
+    // A hollow note keeps a faint wash of its own colour when tinted, which
+    // stops thin outlines from disappearing against a busy page.
+    fillOpacity: filled ? 1 : hollowTint,
     stroke: strokeWidth > 0 ? stroke : 'none',
     strokeWidth,
     opacity,
   }
+
+  // fill:'none' cannot be tinted, so a tinted hollow note keeps its colour and
+  // leans on fillOpacity instead.
+  if (!filled && hollowTint > 0) common.fill = fill
 
   return (
     <g
@@ -100,7 +113,10 @@ export function NoteGlyph({
           height={tailHeight}
           rx={tailHeight / 2}
           fill={fill}
-          opacity={opacity * 0.45}
+          // The tail is already a faint version of the note, so a hollow note
+          // fades it further rather than outlining it — an outlined hairline
+          // would read as noise.
+          opacity={opacity * (filled ? 0.45 : 0.24)}
         />
       )}
 

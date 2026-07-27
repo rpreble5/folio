@@ -1,14 +1,16 @@
 /**
  * Colour and shape vocabularies.
  *
- * A palette owns the dimension it maps, rather than being a bag of colours you
- * point at an arbitrary dimension. That collapses two controls into one in the
- * UI ("colour by: Harmony") and makes invalid combinations unrepresentable.
+ * Colour is parametric rather than a fixed list. A palette is really two
+ * independent choices — how hue maps onto pitch (the *order*) and how bright
+ * and saturated it is (the *tone*) — so enumerating every combination would
+ * mean a wall of near-identical swatches. Exposing the two axes separately
+ * gives the same range from a handful of controls, and makes a new palette idea
+ * nearly free.
  *
- * Every entry declares `cvdSafe` honestly. Twelve distinguishable hues do not
- * exist for someone with colour vision deficiency, so palettes that need twelve
- * are marked unsafe and the app pairs them with a redundant channel instead of
- * pretending otherwise.
+ * Every option declares `cvdSafe` honestly. Twelve distinguishable hues do not
+ * exist for someone with colour vision deficiency, so anything needing twelve
+ * is marked unsafe and paired with a redundant channel rather than pretending.
  */
 
 import type { KeyMark, NoteEvent } from './types'
@@ -28,13 +30,12 @@ export type ShapeKind =
 export interface Palette {
   id: string
   name: string
-  /** Short line shown under the swatch in the Studio. */
   note: string
   cvdSafe: boolean
   /** Which musical dimension this palette reads. */
   domain: 'pitchClass' | 'scaleDegree' | 'hand' | 'octave' | 'fixed'
   colors: string[]
-  /** Text colour to use on top of each swatch, when the label sits inside. */
+  /** Text colour for a label sitting inside the note. */
   onColor?: string[]
 }
 
@@ -46,168 +47,173 @@ const PAPER = '#f4f6fb'
 // ---------------------------------------------------------------------------
 
 /**
- * How a pitch class is mapped onto the colour wheel.
+ * How a pitch class maps onto the colour wheel.
  *
- * This is the choice that matters most, and the obvious answer is the wrong
- * one. Ordering hues chromatically means semitone neighbours — which are also
- * *adjacent rows* on a piano roll, and the pairs music asks you to
- * distinguish most often — get near-identical colours. The encoding ends up
- * fighting itself precisely where it is needed.
+ * The obvious answer is the wrong one. Ordering hues chromatically puts
+ * semitone neighbours next to each other on the wheel — and semitone
+ * neighbours are also adjacent rows on a roll, and the pairs music asks you to
+ * distinguish most often. The encoding ends up weakest exactly where it is
+ * needed most.
  */
 export type HueOrder = 'chromatic' | 'fifths' | 'keys'
+
+export const HUE_ORDERS: { id: HueOrder; name: string; note: string }[] = [
+  {
+    id: 'fifths',
+    name: 'Fifths',
+    note: 'Hue follows the circle of fifths, so neighbouring notes land opposite each other and notes a fifth apart look related. Easiest to read.',
+  },
+  {
+    id: 'chromatic',
+    name: 'Rainbow',
+    note: 'Hue follows pitch straight up. The page reads as a rainbow, at the cost of semitone neighbours looking alike.',
+  },
+  {
+    id: 'keys',
+    name: 'Keys',
+    note: 'White keys warm and light, black keys cool and dark — the way the instrument looks.',
+  },
+]
 
 /**
  * Position of a pitch class on the circle of fifths.
  *
- * Multiplying by 7 walks the circle, because a fifth is seven semitones and 7
- * is its own inverse modulo 12. Using this as the hue index puts every semitone
- * pair 210° apart — nearly opposite — while a fifth apart lands adjacent, so
- * colour distance tracks harmonic distance instead of working against it.
+ * Multiplying by seven walks the circle, because a fifth is seven semitones and
+ * seven is its own inverse modulo twelve. As a hue index this puts every
+ * semitone pair about 210° apart while a fifth lands adjacent, so colour
+ * distance tracks harmonic distance instead of fighting it.
  */
 const fifthsIndex = (pc: number): number => (pc * 7) % 12
 
 const NATURALS = [0, 2, 4, 5, 7, 9, 11]
 const LETTER_OF = new Map(NATURALS.map((pc, i) => [pc, i]))
-const ACCIDENTALS = [1, 3, 6, 8, 10]
-const ACCIDENTAL_OF = new Map(ACCIDENTALS.map((pc, i) => [pc, i]))
+const ACCIDENTAL_OF = new Map([1, 3, 6, 8, 10].map((pc, i) => [pc, i]))
+
+export const isNatural = (pc: number): boolean => LETTER_OF.has(pc)
 
 /**
- * Warm hue for a white key, cool hue for a black key.
- *
- * Colour then doubles as an accidental indicator, and because every semitone
- * step crosses between the two bands, neighbours are always far apart. Within
- * each band the order is shuffled (×4 mod 7, ×2 mod 5) so that consecutive
- * letters — E and F especially — do not land side by side either.
+ * Warm hue for a white key, cool for a black one. Every semitone step crosses
+ * between the bands, and within each band the order is shuffled (×4 mod 7,
+ * ×2 mod 5) so consecutive letters do not land side by side either — E–F and
+ * B–C matter most, being the only semitone steps between two white keys.
  */
 function keysHue(pc: number): number {
   const letter = LETTER_OF.get(pc)
-  // The white band is the wide one because it has to carry seven hues, and
-  // because E–F and B–C are the only semitone steps where both notes are white
-  // — the lightness split cannot separate those, so hue is all there is.
   if (letter !== undefined) return 20 + ((letter * 4) % 7) * 25
-  const accidental = ACCIDENTAL_OF.get(pc) ?? 0
-  return 195 + ((accidental * 2) % 5) * 32
+  return 195 + ((ACCIDENTAL_OF.get(pc) ?? 0) * 2 % 5) * 32
 }
 
 function hueFor(order: HueOrder, pc: number, offset: number): number {
-  if (order === 'keys') return keysHue(pc)
+  if (order === 'keys') return (keysHue(pc) + offset) % 360
   const index = order === 'fifths' ? fifthsIndex(pc) : pc
-  return (index * 30 + offset) % 360
+  return (index * 30 + 25 + offset) % 360
 }
 
-interface Generated {
-  id: string
+// ---------------------------------------------------------------------------
+// Tone
+// ---------------------------------------------------------------------------
+
+export type ToneId = 'bright' | 'neon' | 'pastel' | 'earth' | 'contrast' | 'deep'
+
+interface Tone {
+  id: ToneId
   name: string
   note: string
-  order: HueOrder
-  /** A pair adds a luminance channel on top of hue. See {@link Generated.toneBy}. */
+  /** A pair alternates note by note, adding a brightness channel. */
   lightness: number | [number, number]
-  /**
-   * How a lightness pair is assigned. 'index' alternates note by note; 'keys'
-   * gives the first value to white keys and the second to black ones, which
-   * mirrors the instrument and separates every semitone step by brightness as
-   * well as hue.
-   */
-  toneBy?: 'index' | 'keys'
   chroma: number
-  hueOffset?: number
-  cvdSafe?: boolean
 }
 
-function generate(spec: Generated): Palette {
-  const colors: string[] = []
-  const onColor: string[] = []
-
-  for (let pc = 0; pc < 12; pc++) {
-    const L = Array.isArray(spec.lightness)
-      ? spec.lightness[
-          spec.toneBy === 'keys' ? (LETTER_OF.has(pc) ? 0 : 1) : pc % 2
-        ]
-      : spec.lightness
-    colors.push(oklch(L, spec.chroma, hueFor(spec.order, pc, spec.hueOffset ?? 25)))
-    onColor.push(inkOn(L))
-  }
-
-  return {
-    id: spec.id,
-    name: spec.name,
-    note: spec.note,
-    cvdSafe: spec.cvdSafe ?? false,
-    domain: 'pitchClass',
-    colors,
-    onColor,
-  }
-}
-
-export const PALETTES: Palette[] = [
-  generate({
-    id: 'fifths',
-    name: 'Fifths',
-    note: 'Hue follows the circle of fifths, so neighbours land opposite each other and notes a fifth apart look related.',
-    order: 'fifths',
-    lightness: 0.76,
-    chroma: 0.15,
-  }),
-  generate({
-    id: 'keys',
-    name: 'Black & White',
-    note: 'White keys warm and light, black keys cool and dark — the way the instrument looks.',
-    order: 'keys',
-    // 0.80 rather than 0.85: above that the gamut clips the chroma hard and the
-    // whole white band washes out toward each other.
-    lightness: [0.8, 0.56],
-    toneBy: 'keys',
-    chroma: 0.15,
-  }),
-  generate({
-    id: 'neon',
-    name: 'Neon',
-    note: 'Fifths order at full chroma. Loudest on a dark page.',
-    order: 'fifths',
-    lightness: 0.78,
-    chroma: 0.21,
-  }),
-  generate({
-    id: 'pastel',
-    name: 'Pastel',
-    note: 'Fifths order, soft and light. Quiet to read for a long stretch.',
-    order: 'fifths',
-    lightness: 0.87,
-    chroma: 0.075,
-  }),
-  generate({
-    id: 'earth',
-    name: 'Earth',
-    note: 'Muted and low-chroma. For anyone who finds a rainbow tiring.',
-    order: 'fifths',
-    lightness: 0.66,
-    chroma: 0.07,
-  }),
-  generate({
+export const TONES: Tone[] = [
+  { id: 'bright', name: 'Bright', note: 'Even and clear. The default.', lightness: 0.76, chroma: 0.15 },
+  { id: 'neon', name: 'Neon', note: 'Full chroma. Loudest on a dark page.', lightness: 0.78, chroma: 0.21 },
+  { id: 'pastel', name: 'Pastel', note: 'Soft and light. Quiet to read for a long stretch.', lightness: 0.87, chroma: 0.075 },
+  { id: 'earth', name: 'Earth', note: 'Muted and low-chroma, for anyone who finds a rainbow tiring.', lightness: 0.66, chroma: 0.07 },
+  {
     id: 'contrast',
     name: 'Contrast',
     note: 'Lightness alternates note by note, so neighbours differ in brightness as well as hue.',
-    order: 'fifths',
     lightness: [0.89, 0.53],
     chroma: 0.12,
-  }),
-  generate({
-    id: 'deep',
-    name: 'Deep',
-    note: 'Fifths order, darkened for a paper page where bright colours wash out.',
-    order: 'fifths',
-    lightness: 0.56,
-    chroma: 0.14,
-  }),
-  generate({
-    id: 'spectral',
-    name: 'Spectral',
-    note: 'Hue follows pitch in order — a rainbow, but semitone neighbours end up nearly the same colour.',
-    order: 'chromatic',
-    lightness: 0.76,
-    chroma: 0.15,
-  }),
+  },
+  { id: 'deep', name: 'Deep', note: 'Darkened for a paper page, where bright colours wash out.', lightness: 0.56, chroma: 0.14 },
+]
+
+const toneById = (id: ToneId): Tone => TONES.find((t) => t.id === id) ?? TONES[0]
+
+// ---------------------------------------------------------------------------
+// Colour source
+// ---------------------------------------------------------------------------
+
+export type ColorSource = 'pitch' | 'classroom' | 'harmony' | 'hands' | 'register' | 'ink'
+
+export const COLOR_SOURCES: {
+  id: ColorSource
+  name: string
+  note: string
+  cvdSafe: boolean
+  /** Whether order/tone/rotation apply. */
+  tunable: boolean
+}[] = [
+  { id: 'pitch', name: 'Pitch', note: 'A colour per note name.', cvdSafe: false, tunable: true },
   {
+    id: 'harmony',
+    name: 'Harmony',
+    note: 'Colour follows scale degree — tonic blue, dominant orange, in every key. Non-scale notes stay grey.',
+    cvdSafe: true,
+    tunable: false,
+  },
+  {
+    id: 'hands',
+    name: 'Hands',
+    note: 'Two colours, one per hand. The calmest option, and safe for every kind of colour vision.',
+    cvdSafe: true,
+    tunable: false,
+  },
+  {
+    id: 'register',
+    name: 'Register',
+    note: 'One hue that lightens as pitch rises. Reads as height, not category.',
+    cvdSafe: true,
+    tunable: false,
+  },
+  {
+    id: 'classroom',
+    name: 'Classroom',
+    note: 'The education colour set, familiar from coloured chime bars.',
+    cvdSafe: false,
+    tunable: false,
+  },
+  {
+    id: 'ink',
+    name: 'None',
+    note: 'No colour at all — shape, length and label carry everything.',
+    cvdSafe: true,
+    tunable: false,
+  },
+]
+
+export interface ColorConfig {
+  source: ColorSource
+  order: HueOrder
+  tone: ToneId
+  /** Degrees to rotate the whole wheel. Same structure, different mood. */
+  rotate: number
+}
+
+export const DEFAULT_COLOR: ColorConfig = {
+  source: 'pitch',
+  order: 'fifths',
+  tone: 'bright',
+  rotate: 0,
+}
+
+// ---------------------------------------------------------------------------
+// Fixed palettes
+// ---------------------------------------------------------------------------
+
+const FIXED: Record<Exclude<ColorSource, 'pitch'>, Palette> = {
+  classroom: {
     id: 'classroom',
     name: 'Classroom',
     note: 'The education colour set, familiar from coloured chime bars.',
@@ -219,8 +225,8 @@ export const PALETTES: Palette[] = [
     ],
     onColor: [PAPER, INK, INK, INK, INK, INK, INK, PAPER, PAPER, PAPER, PAPER, PAPER],
   },
-  {
-    id: 'function',
+  harmony: {
+    id: 'harmony',
     name: 'Harmony',
     note: 'Colour follows scale degree — tonic blue, dominant orange, in every key.',
     cvdSafe: true,
@@ -230,24 +236,21 @@ export const PALETTES: Palette[] = [
       '#0072B2', '#7A8698', '#56B4E9', '#7A8698', '#009E73', '#F0E442',
       '#7A8698', '#E69F00', '#7A8698', '#CC79A7', '#7A8698', '#D55E00',
     ],
-    onColor: [
-      PAPER, PAPER, INK, PAPER, PAPER, INK,
-      PAPER, INK, PAPER, INK, PAPER, PAPER,
-    ],
+    onColor: [PAPER, PAPER, INK, PAPER, PAPER, INK, PAPER, INK, PAPER, INK, PAPER, PAPER],
   },
-  {
+  hands: {
     id: 'hands',
     name: 'Hands',
-    note: 'Two colours, one per hand. The calmest option, and safe for every kind of colour vision.',
+    note: 'Two colours, one per hand.',
     cvdSafe: true,
     domain: 'hand',
     colors: ['#E69F00', '#0072B2'],
     onColor: [INK, PAPER],
   },
-  {
+  register: {
     id: 'register',
     name: 'Register',
-    note: 'One hue that lightens as pitch rises. Reads as height, not category.',
+    note: 'One hue that lightens as pitch rises.',
     cvdSafe: true,
     domain: 'octave',
     colors: [
@@ -256,24 +259,83 @@ export const PALETTES: Palette[] = [
     ],
     onColor: [PAPER, PAPER, PAPER, PAPER, INK, INK, INK, INK, INK],
   },
-  {
+  ink: {
     id: 'ink',
-    name: 'Ink',
-    note: 'No colour at all — shape, length and label carry everything.',
+    name: 'None',
+    note: 'No colour at all.',
     cvdSafe: true,
     domain: 'fixed',
-    // Sentinel: resolved against the current surface so Ink works on paper and
-    // on a dark stage without needing two copies of the palette.
+    // Sentinel: resolved against the current surface so this works on paper and
+    // on a dark stage without needing two copies.
     colors: ['@ink'],
     onColor: ['@paper'],
   },
-]
-
-export function getPalette(id: string): Palette {
-  return PALETTES.find((p) => p.id === id) ?? PALETTES[0]
 }
 
-/** Index into a palette's colour array for a given note. */
+// ---------------------------------------------------------------------------
+// Building
+// ---------------------------------------------------------------------------
+
+const clamp01 = (n: number) => Math.min(0.98, Math.max(0.08, n))
+
+// resolveStyle runs per note, so twelve OKLCH conversions per note would be
+// wasteful. The config is a small value, so keying a cache on it is enough.
+const cache = new Map<string, Palette>()
+
+export function buildPalette(config: ColorConfig): Palette {
+  if (config.source !== 'pitch') return FIXED[config.source]
+
+  const key = `${config.order}|${config.tone}|${config.rotate}`
+  const hit = cache.get(key)
+  if (hit) return hit
+
+  const tone = toneById(config.tone)
+  let lightness = tone.lightness
+  let byKeys = false
+
+  if (config.order === 'keys') {
+    // The instrument metaphor needs light naturals and dark accidentals, so a
+    // single-lightness tone is split around its own value rather than ignored.
+    byKeys = true
+    if (!Array.isArray(lightness)) {
+      lightness = [clamp01(lightness + 0.05), clamp01(lightness - 0.18)]
+    }
+  }
+
+  const colors: string[] = []
+  const onColor: string[] = []
+
+  for (let pc = 0; pc < 12; pc++) {
+    const L = Array.isArray(lightness)
+      ? lightness[byKeys ? (isNatural(pc) ? 0 : 1) : pc % 2]
+      : lightness
+    colors.push(oklch(L, tone.chroma, hueFor(config.order, pc, config.rotate)))
+    onColor.push(inkOn(L))
+  }
+
+  const order = HUE_ORDERS.find((o) => o.id === config.order)!
+  const palette: Palette = {
+    id: `pitch-${key}`,
+    name: `${order.name} · ${tone.name}`,
+    note: order.note,
+    cvdSafe: false,
+    domain: 'pitchClass',
+    colors,
+    onColor,
+  }
+
+  cache.set(key, palette)
+  return palette
+}
+
+export function isCvdSafe(config: ColorConfig): boolean {
+  return COLOR_SOURCES.find((s) => s.id === config.source)?.cvdSafe ?? false
+}
+
+// ---------------------------------------------------------------------------
+// Lookup
+// ---------------------------------------------------------------------------
+
 function paletteIndex(palette: Palette, note: NoteEvent, key: KeyMark): number {
   switch (palette.domain) {
     case 'pitchClass':
@@ -294,8 +356,7 @@ export function colorFor(palette: Palette, note: NoteEvent, key: KeyMark): strin
 }
 
 export function onColorFor(palette: Palette, note: NoteEvent, key: KeyMark): string {
-  const idx = paletteIndex(palette, note, key)
-  return palette.onColor?.[idx] ?? INK
+  return palette.onColor?.[paletteIndex(palette, note, key)] ?? INK
 }
 
 // ---------------------------------------------------------------------------
@@ -328,17 +389,15 @@ export const SHAPE_SETS: ShapeSet[] = [
   {
     id: 'accidental',
     name: 'Sharps & flats',
-    note: 'Naturals are round, sharps point up, flats point down. A second channel that says the same thing colour does.',
+    note: 'Naturals round, sharps point up, flats point down.',
     domain: 'accidental',
-    // [natural, sharp, flat]
     shapes: ['circle', 'triangleUp', 'triangleDown'],
   },
   {
     id: 'duration',
     name: 'Duration',
-    note: 'Shape changes with note length — what stems and flags do, without the stems and flags.',
+    note: 'Shape changes with note length — what stems and flags do, without them.',
     domain: 'duration',
-    // [sixteenth, eighth, quarter, half, whole]
     shapes: ['diamond', 'triangleUp', 'circle', 'hexagon', 'rect'],
   },
   {
@@ -351,7 +410,7 @@ export const SHAPE_SETS: ShapeSet[] = [
   {
     id: 'degree',
     name: 'Scale degree',
-    note: 'A distinct shape per degree, with chromatic notes as diamonds. The strongest redundant channel for colour-blind readers.',
+    note: 'A distinct shape per degree, chromatic notes as diamonds. The strongest redundant channel.',
     domain: 'scaleDegree',
     shapes: [
       'hexagon', 'diamond', 'circle', 'diamond', 'triangleUp', 'rect',
@@ -364,13 +423,12 @@ export function getShapeSet(id: string): ShapeSet {
   return SHAPE_SETS.find((s) => s.id === id) ?? SHAPE_SETS[0]
 }
 
-/** Bucket a duration in beats into the five traditional length classes. */
 function durationBucket(beats: number): number {
-  if (beats < 0.375) return 0 // sixteenth
-  if (beats < 0.75) return 1 // eighth
-  if (beats < 1.5) return 2 // quarter
-  if (beats < 3) return 3 // half
-  return 4 // whole
+  if (beats < 0.375) return 0
+  if (beats < 0.75) return 1
+  if (beats < 1.5) return 2
+  if (beats < 3) return 3
+  return 4
 }
 
 export function shapeFor(set: ShapeSet, note: NoteEvent, key: KeyMark): ShapeKind {
@@ -380,7 +438,7 @@ export function shapeFor(set: ShapeSet, note: NoteEvent, key: KeyMark): ShapeKin
     case 'accidental':
       if (note.spelling.alter > 0) return set.shapes[1]
       if (note.spelling.alter < 0) return set.shapes[2]
-      // A black key with no written accidental (MIDI import) still reads as sharp.
+      // A black key with no written accidental (MIDI import) still reads sharp.
       return isBlackKey(note.midi) ? set.shapes[1] : set.shapes[0]
     case 'duration':
       return set.shapes[durationBucket(note.duration)]
