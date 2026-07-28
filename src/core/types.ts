@@ -43,6 +43,8 @@ export interface NoteEvent {
   measure: number
   /** 0..1 velocity-ish. Available as an encodable dimension. */
   velocity: number
+  /** True for the earliest note of its bar, so labels can mark bar starts. */
+  firstInBar?: boolean
   /** Optional performance hints, encodable as visual channels. */
   finger?: number
   articulation?: 'staccato' | 'accent' | 'tenuto'
@@ -151,6 +153,21 @@ export function secondsToBeat(score: Score, seconds: number): number {
     bpm = t.bpm
   }
   return beat + ((seconds - elapsed) * bpm) / 60
+}
+
+/**
+ * Mark the first note of each bar. Done once when a score is built rather than
+ * per render, since it depends only on the notes themselves.
+ */
+export function markBarStarts(notes: NoteEvent[]): void {
+  const earliest = new Map<number, number>()
+  for (const n of notes) {
+    const at = earliest.get(n.measure)
+    if (at === undefined || n.onset < at - 1e-6) earliest.set(n.measure, n.onset)
+  }
+  for (const n of notes) {
+    n.firstInBar = Math.abs(n.onset - (earliest.get(n.measure) ?? -1)) < 1e-6
+  }
 }
 
 export function pitchRange(score: Score): { min: number; max: number } {

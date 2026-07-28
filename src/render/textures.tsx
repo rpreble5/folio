@@ -82,14 +82,8 @@ const KINDS: Exclude<TextureKind, 'none'>[] = ['grain', 'dots', 'lines', 'cross'
  * Scale lives on the pattern rather than on each use, so all three surfaces —
  * page, note, trail — can carry different scales without duplicating tiles.
  */
-export function TextureDefs({
-  noteTexture,
-  pageTexture,
-}: {
-  noteTexture: TextureConfig
-  pageTexture: TextureConfig
-}) {
-  const wanted = [noteTexture, pageTexture].filter((t) => t.kind !== 'none')
+export function TextureDefs({ textures }: { textures: TextureConfig[] }) {
+  const wanted = textures.filter((t) => t.kind !== 'none')
 
   return (
     <defs>

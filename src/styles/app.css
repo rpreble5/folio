@@ -1275,3 +1275,14 @@ button {
   grid-template-columns: 1fr 1fr;
   gap: 12px 18px;
 }
+
+/* The staff itself as the control surface — click a line or a space.
+   Intrinsic size, not stretched: a column-flex parent was squashing the aspect
+   ratio and collapsing ten lines into three. */
+.staff-mini {
+  display: block;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  flex: none;
+  align-self: flex-start;
+}

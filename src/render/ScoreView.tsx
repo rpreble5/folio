@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import type { Score } from '../core/types'
 import { diatonicIndex, keyboardPosition, octaveOf, pitchClass } from '../core/pitch'
 import type { LineRole, LineStyle, Surface, Theme } from '../core/theme'
-import { dashArray, lineColor } from '../core/theme'
+import type { LabelPlace } from '../core/theme'
+import { NO_TEXTURE, dashArray, fontStack, lineColor, staffLineStyle } from '../core/theme'
 import type { Layout, System } from './layout'
 import { NoteGlyph } from './NoteGlyph'
 import { CvdFilters, cvdFilterUrl, type CvdMode } from './cvd'
@@ -23,6 +24,20 @@ interface Props {
 
 const BASS_STAFF = [18, 20, 22, 24, 26]
 const TREBLE_STAFF = [30, 32, 34, 36, 38]
+
+/** All ten staff lines, bottom to top, as diatonic indices. */
+export const STAFF_LINES = [...BASS_STAFF, ...TREBLE_STAFF]
+
+/** Where a label sits vertically, given its placement. */
+function labelY(
+  placed: { y: number; height: number },
+  place: LabelPlace,
+  size: number,
+): number {
+  if (place === 'above') return placed.y - size * 0.4
+  if (place === 'below') return placed.y + placed.height + size
+  return placed.y + placed.height / 2 + size * 0.35
+}
 
 const KEY_WHITE = '#eef1f7'
 const KEY_BLACK = '#171b24'
@@ -91,7 +106,18 @@ export function ScoreView({
       }}
     >
       <CvdFilters />
-      <TextureDefs noteTexture={theme.encodings.texture} pageTexture={cfg.pageTexture} />
+      <TextureDefs
+        textures={[
+          theme.encodings.texture,
+          cfg.pageTexture,
+          // Space shading can carry its own texture, and a pattern that is not
+          // defined here simply renders as nothing.
+          ...Object.values(cfg.staff.spaces).map((sp) => ({
+            ...NO_TEXTURE,
+            kind: sp.texture,
+          })),
+        ]}
+      />
 
       <rect width="100%" height="100%" fill={surface.background} />
       {/* Page grain sits under everything, and wants a much coarser scale than
@@ -188,18 +214,56 @@ function SystemGroup({
           />
         ))}
 
-      {/* Staff lines */}
-      {isStaff && cfg.lines.staff.show &&
-        [...BASS_STAFF, ...TREBLE_STAFF].map((index) => (
-          <line
-            key={`staff-${index}`}
-            x1={layout.gutter}
-            x2={layout.gutter + systemWidth}
-            y1={yFor(index) + layout.noteHeight / 2}
-            y2={yFor(index) + layout.noteHeight / 2}
-            {...strokeProps(cfg.lines.staff, 'staff', surface)}
-          />
-        ))}
+      {/* Shaded spaces, under the lines that bound them. */}
+      {isStaff &&
+        STAFF_LINES.map((di, i) => {
+          if (i === STAFF_LINES.length - 1) return null
+          const space = cfg.staff.spaces[i]
+          if (!space || space.fill === '@none') return null
+          const yTop = yFor(STAFF_LINES[i + 1]) + layout.noteHeight / 2
+          const yBottom = yFor(di) + layout.noteHeight / 2
+          const fill = space.fill === '@auto' ? surface.gridStrong : space.fill
+          const pattern = textureFill({ ...NO_TEXTURE, kind: space.texture })
+          return (
+            <g key={`space-${i}`}>
+              <rect
+                x={layout.gutter}
+                y={yTop}
+                width={systemWidth}
+                height={Math.max(0, yBottom - yTop)}
+                fill={fill}
+                opacity={space.opacity}
+              />
+              {pattern && (
+                <rect
+                  x={layout.gutter}
+                  y={yTop}
+                  width={systemWidth}
+                  height={Math.max(0, yBottom - yTop)}
+                  fill={pattern}
+                  opacity={space.opacity}
+                />
+              )}
+            </g>
+          )
+        })}
+
+      {/* Staff lines, each able to override the shared style. */}
+      {isStaff &&
+        STAFF_LINES.map((di, i) => {
+          const style = staffLineStyle(cfg.staff, i, cfg.lines.staff)
+          if (!style.show) return null
+          return (
+            <line
+              key={`staff-${i}`}
+              x1={layout.gutter}
+              x2={layout.gutter + systemWidth}
+              y1={yFor(di) + layout.noteHeight / 2}
+              y2={yFor(di) + layout.noteHeight / 2}
+              {...strokeProps(style, 'staff', surface)}
+            />
+          )
+        })}
 
       {/* Beat grid */}
       {cfg.lines.beat.show &&
@@ -329,13 +393,22 @@ function SystemGroup({
                 texture={encodings.texture}
                 trailGrain={encodings.trailGrain}
               />
-              {placed.style.labelText && layout.noteHeight >= 10 && (
+              {placed.style.labelText && (
                 <text
                   x={placed.x + Math.min(placed.height, placed.width) / 2}
-                  y={placed.y + placed.height / 2 + labelSize * 0.35}
-                  fill={placed.style.labelColor}
+                  y={labelY(placed, encodings.labelPlace, labelSize)}
+                  // Outside the note there is no fill to contrast against, so
+                  // the label takes the page's own text colour instead.
+                  fill={
+                    encodings.labelPlace === 'inside'
+                      ? placed.style.labelColor
+                      : surface.text
+                  }
+                  fillOpacity={encodings.labelOpacity}
                   fontSize={labelSize}
-                  fontWeight={650}
+                  fontWeight={encodings.labelWeight}
+                  fontFamily={fontStack(encodings.labelFont)}
+                  letterSpacing={encodings.labelTracking}
                   textAnchor="middle"
                   pointerEvents="none"
                   className="score__note-label"

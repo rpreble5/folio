@@ -12,6 +12,7 @@
  */
 
 import type { Hand, KeyMark, NoteEvent, Score, Spelling, Step, TempoMark, TimeSignature } from '../core/types'
+import { markBarStarts } from '../core/types'
 import { spellingToMidi } from '../core/pitch'
 
 const num = (el: Element | null | undefined, fallback = 0): number => {
@@ -209,6 +210,8 @@ export function parseMusicXml(xml: string): Score {
       measureStart = Math.max(measureEnd, cursor)
     })
   })
+
+  markBarStarts(notes)
 
   notes.sort((a, b) => a.onset - b.onset || a.midi - b.midi)
 

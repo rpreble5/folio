@@ -9,7 +9,7 @@
  */
 
 import { eventsFromDsl } from './dsl'
-import { beatsPerMeasure } from './types'
+import { beatsPerMeasure, markBarStarts } from './types'
 import type { Score, TimeSignature } from './types'
 
 interface PieceSpec {
@@ -115,6 +115,8 @@ function buildScore(spec: PieceSpec): Score {
     ...eventsFromDsl(spec.right, 'right', bpm, 0.75),
     ...eventsFromDsl(spec.left, 'left', bpm, 0.6),
   ].sort((a, b) => a.onset - b.onset || a.midi - b.midi)
+
+  markBarStarts(notes)
 
   const length = notes.reduce((max, n) => Math.max(max, n.onset + n.duration), 0)
 

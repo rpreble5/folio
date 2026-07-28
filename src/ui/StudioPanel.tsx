@@ -30,15 +30,19 @@ import {
   type ColorConfig,
 } from '../core/palettes'
 import { HueWheel } from './HueWheel'
+import { StaffEditor } from './StaffEditor'
 import {
   ANCHOR_OPTIONS,
   DASH_KINDS,
+  LABEL_FONTS,
+  LABEL_TARGETS,
   NO_TEXTURE,
   OUTLINE_TARGETS,
   TEXTURE_KINDS,
   describeSelector,
   makeSurface,
   type LabelKind,
+  type LabelOn,
   type LineRole,
   type LineStyle,
   type OutlineWhat,
@@ -636,24 +640,106 @@ function MarksTab() {
         )}
       </Group>
 
-      <Group label="Text">
-        <Field name="Inside each note">
+      {/* Labels are the way *off* labels as much as onto them: fade them and
+          narrow which notes carry one as the colours take over. */}
+      <Group label="Labels">
+        <Field name="Show">
           <Pills
             options={LABEL_OPTIONS}
             value={theme.encodings.label}
             onChange={(label) => patchEncodings({ label })}
           />
         </Field>
-        <Field name="Size" value={`${Math.round(theme.encodings.labelScale * 100)}%`}>
-          <Slider
-            label="Label size"
-            min={0.7}
-            max={1.4}
-            step={0.05}
-            value={theme.encodings.labelScale}
-            onChange={(labelScale) => patchEncodings({ labelScale })}
-          />
-        </Field>
+
+        {theme.encodings.label !== 'none' && (
+          <>
+            <Field name="On which notes">
+              <Pills
+                options={LABEL_TARGETS.map((t) => ({ value: t.id, label: t.label }))}
+                value={theme.encodings.labelOn}
+                onChange={(labelOn: LabelOn) => patchEncodings({ labelOn })}
+              />
+            </Field>
+            <Field name="Typeface">
+              <Pills
+                options={LABEL_FONTS.map((f) => ({ value: f.id, label: f.label }))}
+                value={theme.encodings.labelFont}
+                onChange={(labelFont) => patchEncodings({ labelFont })}
+              />
+            </Field>
+            <Field name="Place">
+              <Pills
+                options={[
+                  { value: 'inside', label: 'Inside' },
+                  { value: 'above', label: 'Above' },
+                  { value: 'below', label: 'Below' },
+                ]}
+                value={theme.encodings.labelPlace}
+                onChange={(labelPlace) => patchEncodings({ labelPlace })}
+              />
+            </Field>
+            <Field name="Case">
+              <Pills
+                options={[
+                  { value: 'as-is', label: 'As is' },
+                  { value: 'upper', label: 'UPPER' },
+                  { value: 'lower', label: 'lower' },
+                ]}
+                value={theme.encodings.labelCase}
+                onChange={(labelCase) => patchEncodings({ labelCase })}
+              />
+            </Field>
+            <div className="slider-pair">
+              <Field name="Size" value={`${Math.round(theme.encodings.labelScale * 100)}%`}>
+                <Slider
+                  label="Label size"
+                  min={0.6}
+                  max={1.6}
+                  step={0.05}
+                  value={theme.encodings.labelScale}
+                  onChange={(labelScale) => patchEncodings({ labelScale })}
+                />
+              </Field>
+              <Field name="Fade" value={`${Math.round(theme.encodings.labelOpacity * 100)}%`}>
+                <Slider
+                  label="Label opacity"
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  value={theme.encodings.labelOpacity}
+                  onChange={(labelOpacity) => patchEncodings({ labelOpacity })}
+                />
+              </Field>
+              <Field name="Weight" value={`${theme.encodings.labelWeight}`}>
+                <Slider
+                  label="Label weight"
+                  min={300}
+                  max={800}
+                  step={50}
+                  value={theme.encodings.labelWeight}
+                  onChange={(labelWeight) => patchEncodings({ labelWeight })}
+                />
+              </Field>
+              <Field name="Tracking" value={`${theme.encodings.labelTracking.toFixed(1)}`}>
+                <Slider
+                  label="Label tracking"
+                  min={-0.5}
+                  max={2}
+                  step={0.1}
+                  value={theme.encodings.labelTracking}
+                  onChange={(labelTracking) => patchEncodings({ labelTracking })}
+                />
+              </Field>
+            </div>
+            {theme.encodings.labelPlace === 'inside' && noteHeight < 13 && (
+              <p className="note-text warn">
+                At this note height a label inside will be cramped. Try Above, or raise the
+                note height on the Page tab.
+              </p>
+            )}
+          </>
+        )}
+
         <Switch
           label="Louder notes are larger"
           checked={theme.encodings.sizeByVelocity}
@@ -804,7 +890,15 @@ function PageTab() {
         </Field>
       </Group>
 
-      <Group label="Lines">
+      <Group label={isRoll ? 'Lines' : 'Staff'}>
+        {!isRoll && (
+          <StaffEditor
+            staff={layout.staff}
+            base={layout.lines.staff}
+            surface={theme.surface}
+            onChange={(staff) => patchLayout({ staff })}
+          />
+        )}
         {isRoll && (
           <Field name="Anchor on">
             {/* Judging a mark against a line is far more precise than judging it
@@ -818,7 +912,7 @@ function PageTab() {
           </Field>
         )}
 
-        {roles.map(({ role, label }) => {
+        {(isRoll ? roles : roles.filter((r) => r.role === 'bar' || r.role === 'ledger')).map(({ role, label }) => {
           const style = layout.lines[role]
           return (
             <div className="line-editor" key={role}>

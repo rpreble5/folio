@@ -160,6 +160,44 @@ export function dashArray(kind: DashKind, width: number): string | undefined {
   }
 }
 
+/**
+ * Where a label sits relative to its note. Inside needs the note tall enough to
+ * hold the text, so the Studio measures and says when it is not.
+ */
+export type LabelPlace = 'inside' | 'above' | 'below'
+
+/**
+ * Which notes carry a label.
+ *
+ * Text is the slowest channel here — a letter has to be looked at directly,
+ * where a colour does not — so labelling everything is heavy and mostly wasted
+ * at tempo. Choosing a subset is also the path off them: all, then only the
+ * accidentals, then none, as the colours take over.
+ */
+export type LabelOn = 'all' | 'accidentals' | 'outsideKey' | 'longNotes' | 'firstInBar'
+
+export const LABEL_TARGETS: { id: LabelOn; label: string }[] = [
+  { id: 'all', label: 'Every note' },
+  { id: 'accidentals', label: 'Sharps & flats' },
+  { id: 'outsideKey', label: 'Outside the key' },
+  { id: 'longNotes', label: 'Long notes' },
+  { id: 'firstInBar', label: 'First in bar' },
+]
+
+export type LabelFont = 'sans' | 'serif' | 'mono' | 'rounded'
+
+export const LABEL_FONTS: { id: LabelFont; label: string; stack: string }[] = [
+  { id: 'sans', label: 'Sans', stack: 'ui-sans-serif, system-ui, sans-serif' },
+  { id: 'rounded', label: 'Rounded', stack: "ui-rounded, 'SF Pro Rounded', system-ui, sans-serif" },
+  { id: 'serif', label: 'Serif', stack: "ui-serif, Georgia, 'Times New Roman', serif" },
+  { id: 'mono', label: 'Mono', stack: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
+]
+
+export const fontStack = (id: LabelFont): string =>
+  LABEL_FONTS.find((f) => f.id === id)?.stack ?? LABEL_FONTS[0].stack
+
+export type LabelCase = 'as-is' | 'upper' | 'lower'
+
 export interface LineStyle {
   show: boolean
   width: number
@@ -216,6 +254,42 @@ export interface LayoutConfig {
   anchorOn: AnchorOn
   /** Texture on the page itself, well below the notes' own scale. */
   pageTexture: TextureConfig
+  staff: StaffStyle
+}
+
+/**
+ * Per-line and per-space styling for the staff.
+ *
+ * Lines are indexed 0–9 from the bottom of the bass staff up, spaces 0–8
+ * between consecutive lines — space 4 being the gap that holds middle C.
+ * Overrides are sparse: anything absent falls back to the shared staff line
+ * style, so a theme only records what was actually changed.
+ */
+export interface SpaceStyle {
+  fill: string
+  opacity: number
+  texture: TextureKind
+}
+
+export interface StaffStyle {
+  lines: Record<number, Partial<LineStyle>>
+  spaces: Record<number, SpaceStyle>
+}
+
+export const STAFF_LINE_COUNT = 10
+export const STAFF_SPACE_COUNT = 9
+
+/** Human names for the staff's lines, bottom to top. */
+export const STAFF_LINE_NAMES = [
+  'G2', 'B2', 'D3', 'F3', 'A3',
+  'E4', 'G4', 'B4', 'D5', 'F5',
+]
+
+export const emptyStaffStyle = (): StaffStyle => ({ lines: {}, spaces: {} })
+
+/** A line's effective style: the shared one, with any per-line override on top. */
+export function staffLineStyle(staff: StaffStyle, index: number, base: LineStyle): LineStyle {
+  return { ...base, ...(staff.lines[index] ?? {}) }
 }
 
 /**
@@ -301,6 +375,14 @@ export interface Encodings {
   sizeByVelocity: boolean
   outlineWhat: OutlineWhat
   outlineStyle: OutlineStyle
+  /** Which notes carry a label — the way off them as much as onto them. */
+  labelOn: LabelOn
+  labelFont: LabelFont
+  labelWeight: number
+  labelOpacity: number
+  labelCase: LabelCase
+  labelPlace: LabelPlace
+  labelTracking: number
   trail: TrailConfig
   texture: TextureConfig
   /**
@@ -424,6 +506,26 @@ function shouldOutline(note: NoteEvent, theme: Theme, key: KeyMark): boolean {
   }
 }
 
+/** Does this note carry a label under the current target? */
+function shouldLabel(note: NoteEvent, theme: Theme, key: KeyMark): boolean {
+  const scale = key.mode === 'minor' ? DIATONIC_MINOR : DIATONIC_MAJOR
+  switch (theme.encodings.labelOn) {
+    case 'all':
+      return true
+    case 'accidentals':
+      return note.spelling.alter !== 0 || !isNatural(pitchClass(note.midi))
+    case 'outsideKey':
+      return !scale.has(scaleDegree(note.midi, key))
+    case 'longNotes':
+      return note.duration >= 2
+    case 'firstInBar':
+      return note.firstInBar === true
+  }
+}
+
+const applyCase = (text: string, kind: LabelCase): string =>
+  kind === 'upper' ? text.toUpperCase() : kind === 'lower' ? text.toLowerCase() : text
+
 export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): ResolvedStyle {
   const palette = buildPalette(theme.encodings.color)
   const shapeSet = getShapeSet(theme.encodings.shapeSet)
@@ -442,7 +544,9 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
     stroke: outlined ? fill : 'transparent',
     strokeWidth: outlined ? 2 : 0,
     shape: shapeFor(shapeSet, note, key),
-    labelText: labelFor(theme.encodings.label, note, key),
+    labelText: shouldLabel(note, theme, key)
+      ? applyCase(labelFor(theme.encodings.label, note, key), theme.encodings.labelCase)
+      : '',
     labelColor: (() => {
       // A hollow note has the page behind it, so a label sitting inside needs
       // the page's text colour rather than one chosen to contrast with the fill.

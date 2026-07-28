@@ -8,6 +8,7 @@
  */
 
 import type { Hand, KeyMark, NoteEvent, Score, Spelling, Step, TempoMark, TimeSignature } from '../core/types'
+import { markBarStarts } from '../core/types'
 
 const SHARP_SPELLINGS: [Step, number][] = [
   ['C', 0], ['C', 1], ['D', 0], ['D', 1], ['E', 0], ['F', 0],
@@ -225,6 +226,8 @@ export function parseMidiFile(buffer: ArrayBuffer): Score {
       velocity: raw.velocity / 127,
     }
   })
+
+  markBarStarts(notes)
 
   notes.sort((a, b) => a.onset - b.onset || a.midi - b.midi)
 
