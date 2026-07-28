@@ -70,7 +70,7 @@ function persistCustomThemes(themes: Theme[]): void {
   }
 }
 
-export type Screen = 'library' | 'score'
+export type Screen = 'library' | 'score' | 'read'
 export type StudioTab =
   | 'styles'
   | 'colour'
@@ -94,6 +94,14 @@ interface State {
   /** Lifted so the shell can give Colour a taller panel. */
   studioTab: StudioTab
   cvd: CvdMode
+  /**
+   * How many systems the Read view fits on screen at once.
+   *
+   * Kept here rather than inside the view so it survives leaving and coming
+   * back — it is a reading preference, not view state, and someone who wants
+   * two lines wants two lines every time.
+   */
+  readSystems: number
 
   playing: boolean
   playheadBeat: number
@@ -122,6 +130,7 @@ interface State {
   selectNote: (id: string | null) => void
   setStudioOpen: (open: boolean) => void
   setStudioTab: (tab: StudioTab) => void
+  setReadSystems: (count: number) => void
   setCvd: (mode: CvdMode) => void
 
   setPlaying: (playing: boolean) => void
@@ -150,6 +159,7 @@ export const useStore = create<State>((set, get) => ({
   studioOpen: true,
   studioTab: 'styles',
   cvd: 'none',
+  readSystems: 2,
 
   playing: false,
   playheadBeat: 0,
@@ -234,6 +244,7 @@ export const useStore = create<State>((set, get) => ({
   selectNote: (id) => set({ selectedNoteId: id }),
   setStudioOpen: (studioOpen) => set({ studioOpen }),
   setStudioTab: (studioTab) => set({ studioTab }),
+  setReadSystems: (readSystems) => set({ readSystems }),
   setCvd: (cvd) => set({ cvd }),
 
   setPlaying: (playing) => set({ playing }),

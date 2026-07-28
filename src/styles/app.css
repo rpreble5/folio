@@ -595,6 +595,173 @@ button {
   color: var(--ink-2);
 }
 
+/* The one button in the chrome that leads somewhere rather than adjusting
+   something. It gets the accent, which nothing else does. */
+.pill--accent {
+  background: var(--bone);
+  color: #16181c;
+  font-weight: 600;
+}
+
+.pill--accent:hover {
+  background: #fff;
+}
+
+/* ----------------------------------------------------------------- read --- */
+
+/*
+ * The reading screen. Everything here answers to one rule: the page is the
+ * interface. The app's own dark chrome does not appear at all — the background
+ * is whatever page colour was chosen in the Studio, edge to edge, and the few
+ * controls sit on it in its own ink rather than in a floating dark bar.
+ */
+.read {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  cursor: default;
+}
+
+/* Hiding the cursor too, once the hands are still. A pointer resting over the
+   music is the last piece of software left on screen. */
+.read--quiet {
+  cursor: none;
+}
+
+/*
+ * Scaled from the top-left rather than centred.
+ *
+ * The score is laid out at exactly viewport-width ÷ scale, so scaling from the
+ * origin maps its left edge to the screen's left edge and its right edge to the
+ * right — no centring arithmetic, and nothing to get wrong when the scale
+ * changes. Centring it instead needs a margin in a unit that is not the one the
+ * transform works in, which is what put bar 1 off the left edge.
+ */
+.read__page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  /* Only the scale ever changes here — the systems are refilled in place rather
+     than scrolled past, so there is no vertical motion to animate. */
+  transition: transform var(--dur) var(--ease);
+}
+
+/* A system arriving in a slot fades up rather than appearing. It is always in
+   peripheral vision when it happens, and a hard cut there registers as a flash
+   even when the thing being read has not changed at all. */
+.read__page g[data-slot] {
+  animation: slot-in 260ms var(--ease);
+}
+
+@keyframes slot-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.read__page > svg {
+  display: block;
+}
+
+.read__here {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  opacity: 0.5;
+  transition: top var(--dur) var(--ease), height var(--dur) var(--ease);
+  pointer-events: none;
+}
+
+.read__bar {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  /* Tinted from the page rather than a fixed dark, so the capsule belongs to
+     whatever colour the reader chose. */
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  backdrop-filter: blur(14px);
+  opacity: 1;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.read__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  opacity: 0.5;
+  transition: opacity var(--dur) var(--ease);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.read--quiet .read__bar {
+  opacity: 0;
+  transform: translateX(-50%) translateY(6px);
+  pointer-events: none;
+}
+
+.read--quiet .read__hint {
+  opacity: 0;
+}
+
+.read__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  opacity: 0.75;
+  transition: opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.read__btn:hover:not(:disabled) {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.read__btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.read__btn--text {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 9px;
+}
+
+.read__where {
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.read__where i {
+  opacity: 0.45;
+  font-style: normal;
+}
+
+.read__sep {
+  width: 1px;
+  height: 15px;
+  background: currentColor;
+  opacity: 0.16;
+}
+
 /* Custom slider — no native range input anywhere in the app. */
 .slider {
   position: relative;

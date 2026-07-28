@@ -20,6 +20,19 @@ interface Props {
   cvd: CvdMode
   /** Coordinates come from the click so the editor can open beside the note. */
   onSelectNote: (id: string | null, at?: { x: number; y: number }) => void
+  /**
+   * Render only these systems, at these positions, instead of the whole score
+   * down the page.
+   *
+   * The Studio wants the score as a document — every system stacked, scrolled
+   * through. The Read view wants a fixed frame with systems swapped into it, so
+   * that the music does not move while it is being read. Both are the same
+   * drawing code; only which system lands where differs, so that is the only
+   * thing this changes.
+   */
+  slots?: { system: number; y: number }[]
+  /** Total drawing height, when the slots do not fill the whole score. */
+  height?: number
 }
 
 const BASS_STAFF = [18, 20, 22, 24, 26]
@@ -62,6 +75,8 @@ export function ScoreView({
   selectedId,
   cvd,
   onSelectNote,
+  slots,
+  height,
 }: Props) {
   const { surface, layout: cfg } = theme
   const isStaff = cfg.mode === 'staff'
@@ -97,8 +112,8 @@ export function ScoreView({
     <svg
       className="score"
       width={layout.width}
-      height={layout.height + 24}
-      viewBox={`0 0 ${layout.width} ${layout.height + 24}`}
+      height={height ?? layout.height + 24}
+      viewBox={`0 0 ${layout.width} ${height ?? layout.height + 24}`}
       role="img"
       aria-label={`${score.title} by ${score.composer}, rendered in the ${theme.name} style`}
       onClick={(e) => {
@@ -127,22 +142,32 @@ export function ScoreView({
       )}
 
       <g filter={filter}>
-        {layout.systems.map((system) => (
-          <SystemGroup
-            key={system.index}
-            system={system}
-            theme={theme}
-            layout={layout}
-            keyboard={keyboard}
-            playheadBeat={playheadBeat}
-            playing={playing}
-            activeIds={activeIds}
-            selectedId={selectedId}
-            onSelectNote={onSelectNote}
-            yFor={yFor}
-            isStaff={isStaff}
-          />
-        ))}
+        {(slots ?? layout.systems.map((s) => ({ system: s.index, y: s.top })))
+          .map(({ system: index, y }) => {
+            const system = layout.systems[index]
+            if (!system) return null
+            return (
+              <SystemGroup
+                // Keyed by slot *and* system, so a slot whose content changes
+                // re-mounts — which is what lets it fade in — while every other
+                // slot is left alone. Keying by slot alone would update in place
+                // and the swap would be a hard cut.
+                key={slots ? `slot-${y}-${system.index}` : system.index}
+                system={system}
+                top={y}
+                theme={theme}
+                layout={layout}
+                keyboard={keyboard}
+                playheadBeat={playheadBeat}
+                playing={playing}
+                activeIds={activeIds}
+                selectedId={selectedId}
+                onSelectNote={onSelectNote}
+                yFor={yFor}
+                isStaff={isStaff}
+              />
+            )
+          })}
       </g>
     </svg>
   )
@@ -150,6 +175,8 @@ export function ScoreView({
 
 interface SystemProps {
   system: System
+  /** Where to draw it, which is the system's own top everywhere but Read. */
+  top: number
   theme: Theme
   layout: Layout
   keyboard: { midi: number; y: number; height: number; black: boolean; label?: string }[]
@@ -164,6 +191,7 @@ interface SystemProps {
 
 function SystemGroup({
   system,
+  top,
   theme,
   layout,
   keyboard,
@@ -184,7 +212,7 @@ function SystemGroup({
   const labelSize = Math.max(7, Math.min(layout.noteHeight * 0.62, 13)) * encodings.labelScale
 
   return (
-    <g transform={`translate(0, ${system.top})`}>
+    <g transform={`translate(0, ${top})`} data-slot={system.index}>
       {/* Black-key bands: the strongest orientation cue on a chromatic axis. */}
       {!isStaff && cfg.showBlackKeyRows &&
         layout.keyRows

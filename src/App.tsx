@@ -7,6 +7,7 @@ import { layoutScore } from './render/layout'
 import { ScoreView } from './render/ScoreView'
 import { Library } from './ui/Library'
 import { StudioPanel } from './ui/StudioPanel'
+import { ReadView } from './ui/ReadView'
 import { NotePopover } from './ui/NotePopover'
 import { Transport } from './ui/Transport'
 import { Pills } from './ui/controls'
@@ -125,6 +126,10 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
       if (target.tagName === 'INPUT') return
+      // Read view binds the same keys to its own handlers; without this both
+      // fire and space toggles playback twice, which is a no-op that looks
+      // like a dropped keypress.
+      if (useStore.getState().screen === 'read') return
 
       if (e.code === 'Space') {
         e.preventDefault()
@@ -188,6 +193,10 @@ export default function App() {
     )
   }
 
+  // Read view keeps the same score, theme and playhead — it is the same session
+  // seen without the workbench around it, not a separate mode with its own state.
+  if (screen === 'read') return <ReadView />
+
   // Two tabs are workbenches rather than rows of settings — the hue wheel and
   // the staff editor are both things you look *at* while dragging — so they
   // borrow height from the score, which stays visible either way.
@@ -222,6 +231,9 @@ export default function App() {
 
         <button className="pill pill--solid" onClick={() => fileInput.current?.click()}>
           Import
+        </button>
+        <button className="pill pill--accent" onClick={() => setScreen('read')}>
+          Read
         </button>
         <input
           ref={fileInput}
