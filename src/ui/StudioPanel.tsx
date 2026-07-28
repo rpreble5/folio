@@ -10,7 +10,7 @@
  * your peripheral vision at the moment you make it.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '../state/store'
 import { PAGES, PRESETS, TRAIL_PRESETS } from '../core/presets'
 import { NoteGlyph } from '../render/NoteGlyph'
@@ -35,12 +35,15 @@ import {
   ANCHOR_OPTIONS,
   DASH_KINDS,
   LABEL_FONTS,
+  LABEL_INKS,
   LABEL_TARGETS,
   NO_TEXTURE,
   OUTLINE_TARGETS,
   TEXTURE_KINDS,
   describeSelector,
   makeSurface,
+  worstLabelContrast,
+  type LabelInk,
   type LabelKind,
   type LabelOn,
   type LineRole,
@@ -49,6 +52,7 @@ import {
   type TextureConfig,
   type TrailConfig,
 } from '../core/theme'
+import { keyAt } from '../core/types'
 import { CVD_MODES, type CvdMode } from '../render/cvd'
 import { Field, Group, Pills, ShapeMark, Slider, Switch, Tile } from './controls'
 
@@ -462,6 +466,7 @@ function ColourTab() {
 
 function MarksTab() {
   const theme = useStore((s) => s.theme)
+  const score = useStore((s) => s.score)
   const layout = useStore((s) => s.theme.layout)
   const patchEncodings = useStore((s) => s.patchEncodings)
   const { shapeSet: shapeSetId, trail, texture } = theme.encodings
@@ -477,6 +482,11 @@ function MarksTab() {
   const noteHeight = layout.laneHeight * (layout.mode === 'staff' ? 1.85 : 0.86)
   const cycles = cyclesAcross(texture, noteHeight)
   const tooFine = texture.kind !== 'none' && cycles < 2.2
+
+  const worstLabel = useMemo(
+    () => (score ? worstLabelContrast(score.notes, theme, (n) => keyAt(score, n.onset)) : null),
+    [score, theme],
+  )
 
   return (
     <div className="columns columns--4">
@@ -689,6 +699,50 @@ function MarksTab() {
                 onChange={(labelCase) => patchEncodings({ labelCase })}
               />
             </Field>
+            <Field name="Ink">
+              <Pills
+                options={LABEL_INKS.map((i) => ({ value: i.id, label: i.label }))}
+                value={theme.encodings.labelInk}
+                onChange={(labelInk: LabelInk) => patchEncodings({ labelInk })}
+              />
+            </Field>
+            {theme.encodings.labelInk === 'tint' && (
+              <Field
+                name="Shade"
+                value={
+                  theme.encodings.labelTint === 0
+                    ? 'same as note'
+                    : `${Math.round(Math.abs(theme.encodings.labelTint) * 100)}% ${
+                        theme.encodings.labelTint < 0 ? 'darker' : 'lighter'
+                      }`
+                }
+              >
+                <Slider
+                  label="Label shade"
+                  min={-0.55}
+                  max={0.55}
+                  step={0.01}
+                  value={theme.encodings.labelTint}
+                  onChange={(labelTint) => patchEncodings({ labelTint })}
+                />
+              </Field>
+            )}
+            {/* Directly under the control that causes it. Measured over the
+                notes actually on the page, so it counts the colours this piece
+                uses and any overrides applied to it — sweeping the palette
+                instead warned about notes that were not there and missed ones
+                that were. */}
+            {worstLabel && (
+              <p className={`note-text${worstLabel.ratio < 3 ? ' warn' : ''}`}>
+                <ContrastDot fill={worstLabel.fill} />
+                Weakest label {worstLabel.ratio.toFixed(1)}:1
+                {worstLabel.ratio < 3
+                  ? ' — under the 3:1 floor. Push the shade further, or fade it less.'
+                  : worstLabel.ratio < 4.5
+                    ? ' — readable, not at small sizes.'
+                    : ' — comfortable.'}
+              </p>
+            )}
             <div className="slider-pair">
               <Field name="Size" value={`${Math.round(theme.encodings.labelScale * 100)}%`}>
                 <Slider
@@ -755,6 +809,30 @@ const sameTrail = (a: TrailConfig, b: TrailConfig): boolean =>
   Math.abs(a.taper - b.taper) < 0.02 &&
   Math.abs(a.melt - b.melt) < 0.02 &&
   Math.abs(a.opacity - b.opacity) < 0.03
+
+/**
+ * The colour that scored worst, shown beside its number.
+ *
+ * A bare ratio says something is wrong without saying where to look. The swatch
+ * points at the note colour to blame, which is usually the one nobody thought
+ * to check.
+ */
+function ContrastDot({ fill }: { fill: string }) {
+  return (
+    <i
+      aria-hidden="true"
+      style={{
+        width: 9,
+        height: 9,
+        borderRadius: 3,
+        background: fill,
+        display: 'inline-block',
+        marginRight: 6,
+        verticalAlign: 'baseline',
+      }}
+    />
+  )
+}
 
 /** A miniature note-and-trail, so a trail preset previews its own silhouette. */
 function TrailMark({ trail }: { trail: TrailConfig }) {

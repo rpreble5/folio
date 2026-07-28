@@ -397,13 +397,10 @@ function SystemGroup({
                 <text
                   x={placed.x + Math.min(placed.height, placed.width) / 2}
                   y={labelY(placed, encodings.labelPlace, labelSize)}
-                  // Outside the note there is no fill to contrast against, so
-                  // the label takes the page's own text colour instead.
-                  fill={
-                    encodings.labelPlace === 'inside'
-                      ? placed.style.labelColor
-                      : surface.text
-                  }
+                  // Placement no longer changes the colour here: resolveStyle
+                  // already knows whether the page or the note is behind the
+                  // text, so a tinted label survives being moved outside.
+                  fill={placed.style.labelColor}
                   fillOpacity={encodings.labelOpacity}
                   fontSize={labelSize}
                   fontWeight={encodings.labelWeight}

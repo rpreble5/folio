@@ -198,6 +198,25 @@ export const fontStack = (id: LabelFont): string =>
 
 export type LabelCase = 'as-is' | 'upper' | 'lower'
 
+/**
+ * What colour a label takes.
+ *
+ * These are three different jobs, not three tastes. 'contrast' maximises
+ * legibility and is what a beginner reading letter-by-letter wants. 'tint'
+ * takes the note's own colour and moves it lighter or darker, which keeps the
+ * text tied to the pitch it names and — being quieter — lets the colour stay
+ * the thing being read while the letter confirms it. That is the wean: the
+ * label recedes without disappearing. 'ink' makes every label the same neutral,
+ * so the text carries no pitch information at all and reads as annotation.
+ */
+export type LabelInk = 'contrast' | 'tint' | 'ink'
+
+export const LABEL_INKS: { id: LabelInk; label: string }[] = [
+  { id: 'contrast', label: 'Auto' },
+  { id: 'tint', label: 'Note shade' },
+  { id: 'ink', label: 'Page ink' },
+]
+
 export interface LineStyle {
   show: boolean
   width: number
@@ -383,6 +402,14 @@ export interface Encodings {
   labelCase: LabelCase
   labelPlace: LabelPlace
   labelTracking: number
+  labelInk: LabelInk
+  /**
+   * How far a 'tint' label moves from the note's colour, in OKLab lightness.
+   * Signed: negative is darker, positive is lighter. Zero would make the text
+   * the same colour as the note it sits on, which is why the Studio measures
+   * the result rather than trusting the number.
+   */
+  labelTint: number
   trail: TrailConfig
   texture: TextureConfig
   /**
@@ -526,6 +553,48 @@ function shouldLabel(note: NoteEvent, theme: Theme, key: KeyMark): boolean {
 const applyCase = (text: string, kind: LabelCase): string =>
   kind === 'upper' ? text.toUpperCase() : kind === 'lower' ? text.toLowerCase() : text
 
+/**
+ * What is actually behind a label.
+ *
+ * Only a label sitting inside a filled note has the note behind it. Above or
+ * below, and inside a hollow note — whose middle is empty — the page shows
+ * through. Deciding this here rather than in the renderer means every ink mode
+ * is measured against what the reader will really see.
+ */
+export function labelBackdrop(fill: string, filled: boolean, theme: Theme): string {
+  return theme.encodings.labelPlace === 'inside' && filled ? fill : theme.surface.background
+}
+
+/**
+ * A label's colour, given the note it names and what sits behind the text.
+ *
+ * 'tint' moves the note's own colour in OKLab, so the hue survives the move and
+ * the text still reads as belonging to that pitch. Whether the result is
+ * legible is a separate question, which contrastRatio answers and the Studio
+ * reports — the control stays free, the consequence is shown.
+ */
+function inkFor(
+  ink: LabelInk,
+  tint: number,
+  noteFill: string,
+  backdrop: string,
+  surface: Surface,
+  onColor?: string,
+): string {
+  switch (ink) {
+    case 'ink':
+      return surface.text
+    case 'tint':
+      return shiftLightness(noteFill, tint)
+    case 'contrast':
+      // A palette may name its own on-colour, which is a considered choice and
+      // beats a computed black or white. Off the note there is no such choice.
+      if (backdrop !== noteFill) return readableOn(backdrop)
+      if (onColor === undefined) return readableOn(noteFill)
+      return onColor === '@paper' ? surface.background : onColor
+  }
+}
+
 export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): ResolvedStyle {
   const palette = buildPalette(theme.encodings.color)
   const shapeSet = getShapeSet(theme.encodings.shapeSet)
@@ -547,13 +616,14 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
     labelText: shouldLabel(note, theme, key)
       ? applyCase(labelFor(theme.encodings.label, note, key), theme.encodings.labelCase)
       : '',
-    labelColor: (() => {
-      // A hollow note has the page behind it, so a label sitting inside needs
-      // the page's text colour rather than one chosen to contrast with the fill.
-      if (outlined) return theme.surface.text
-      const on = onColorFor(palette, note, key)
-      return on === '@paper' ? theme.surface.background : on
-    })(),
+    labelColor: inkFor(
+      theme.encodings.labelInk,
+      theme.encodings.labelTint,
+      fill,
+      labelBackdrop(fill, !outlined, theme),
+      theme.surface,
+      onColorFor(palette, note, key),
+    ),
     opacity: 1,
     scale: theme.encodings.sizeByVelocity ? 0.82 + note.velocity * 0.28 : 1,
     filled: !outlined,
@@ -567,9 +637,17 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
     const s = rule.style
     if (s.fill !== undefined) {
       base.fill = s.fill
-      // A recoloured note needs its label contrast recomputed, unless the rule
-      // pins one explicitly below.
-      base.labelColor = readableOn(s.fill)
+      // A recoloured note needs its label recomputed under the same ink mode,
+      // unless the rule pins a colour explicitly below. Recomputing rather than
+      // always reaching for readableOn is what keeps a tinted label tied to the
+      // note after a per-note override changes it.
+      base.labelColor = inkFor(
+        theme.encodings.labelInk,
+        theme.encodings.labelTint,
+        s.fill,
+        labelBackdrop(s.fill, base.filled, theme),
+        theme.surface,
+      )
     }
     if (s.stroke !== undefined) base.stroke = s.stroke
     if (s.strokeWidth !== undefined) base.strokeWidth = s.strokeWidth
@@ -588,16 +666,31 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
   return base
 }
 
-/** Pick black or white text for a background, by relative luminance. */
+/**
+ * Pick black or white text for a background, by relative luminance.
+ *
+ * The crossover is where the two choices contrast equally, which WCAG's formula
+ * puts at luminance 0.179, not at the midpoint. Judging by eye and using 0.42
+ * looked reasonable and was not: it handed white text to every colour between
+ * 0.179 and 0.42, bottoming out near 2.2:1 — worse than the 4.5:1 that black
+ * would have given the same colour. This is exactly what the Studio's contrast
+ * readout surfaced, on the palette's own mid-bright greens.
+ */
+const READABLE_CROSSOVER = 0.179
+
 export function readableOn(hex: string): string {
+  return luminanceOf(hex) > READABLE_CROSSOVER ? '#0b0d11' : '#f4f6fb'
+}
+
+/** WCAG relative luminance. */
+function luminanceOf(hex: string): number {
   const rgb = hexToRgb(hex)
-  if (!rgb) return '#0b0d11'
+  if (!rgb) return 0
   const srgb = [rgb.r, rgb.g, rgb.b].map((v) => {
     const c = v / 255
     return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
   })
-  const luminance = 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2]
-  return luminance > 0.42 ? '#0b0d11' : '#f4f6fb'
+  return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2]
 }
 
 export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
@@ -608,18 +701,49 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } | nul
 
 /** WCAG contrast ratio, used to flag unreadable custom colours in the Studio. */
 export function contrastRatio(a: string, b: string): number {
-  const lum = (hex: string) => {
-    const rgb = hexToRgb(hex)
-    if (!rgb) return 0
-    const srgb = [rgb.r, rgb.g, rgb.b].map((v) => {
-      const c = v / 255
-      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-    })
-    return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2]
-  }
-  const la = lum(a)
-  const lb = lum(b)
+  const la = luminanceOf(a)
+  const lb = luminanceOf(b)
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
+/**
+ * The worst contrast any label on this page actually has, and the note causing it.
+ *
+ * Measured over the score's own notes rather than the palette. Sweeping the
+ * palette was the first attempt and it lied in both directions: it warned about
+ * hollow accidentals in a piece with no accidentals in it, and it could not see
+ * a per-note override that recolours one note into invisibility. Resolving the
+ * real notes costs a pass over the score and answers the question the reader is
+ * actually asking, which is whether *this* is legible.
+ */
+export function worstLabelContrast(
+  notes: NoteEvent[],
+  theme: Theme,
+  keyOf: (note: NoteEvent) => KeyMark,
+): { ratio: number; fill: string } | null {
+  let worst: { ratio: number; fill: string } | null = null
+
+  for (const note of notes) {
+    const style = resolveStyle(note, theme, keyOf(note))
+    if (!style.labelText) continue
+    const backdrop = labelBackdrop(style.fill, style.filled, theme)
+    // Fading a label composites it toward its backdrop, so the contrast the
+    // reader gets is the blended colour's, not the ink's.
+    const ink = blend(style.labelColor, backdrop, theme.encodings.labelOpacity * style.opacity)
+    const ratio = contrastRatio(ink, backdrop)
+    if (!worst || ratio < worst.ratio) worst = { ratio, fill: style.fill }
+  }
+  return worst
+}
+
+/** Composite a colour over another at a given alpha. */
+export function blend(fg: string, bg: string, alpha: number): string {
+  const a = hexToRgb(fg)
+  const b = hexToRgb(bg)
+  if (!a || !b) return fg
+  const mix = (x: number, y: number) => Math.round(x * alpha + y * (1 - alpha))
+  const hex = (n: number) => n.toString(16).padStart(2, '0')
+  return `#${hex(mix(a.r, b.r))}${hex(mix(a.g, b.g))}${hex(mix(a.b, b.b))}`
 }
 
 let ruleCounter = 0

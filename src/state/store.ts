@@ -10,12 +10,43 @@ import type { CvdMode } from '../render/cvd'
 // ring became the outline channel, so v1 themes no longer load.
 const STORAGE_KEY = 'folio.customThemes.v2'
 
+/**
+ * Backfill anything a saved theme predates.
+ *
+ * New channels keep arriving, and a theme saved last week has no opinion about
+ * them. Left undefined they do not fall back — an absent labelOn stops every
+ * label rendering — so a style someone built and named would quietly break. The
+ * alternative, bumping the storage key, deletes their work to avoid the
+ * problem. Filling the gaps from the defaults keeps everything they chose and
+ * gives the rest the value a new theme would have.
+ */
+function fillGaps(theme: Theme): Theme {
+  const base = getPreset('chromatic-roll')
+  const layout = { ...base.layout, ...theme.layout }
+  return {
+    ...theme,
+    // Copied rather than shared: these nest one level deeper than the spread
+    // reaches, and a preset is a template, not a thing a loaded theme may edit.
+    layout: {
+      ...layout,
+      lines: { ...base.layout.lines, ...theme.layout?.lines },
+      staff: {
+        lines: { ...theme.layout?.staff?.lines },
+        spaces: { ...theme.layout?.staff?.spaces },
+      },
+    },
+    encodings: { ...base.encodings, ...theme.encodings },
+    surface: { ...base.surface, ...theme.surface },
+    rules: theme.rules ?? [],
+  }
+}
+
 function loadCustomThemes(): Theme[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? parsed.map(fillGaps) : []
   } catch {
     // A corrupt entry should cost the user their saved styles, not the app.
     return []
