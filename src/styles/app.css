@@ -892,6 +892,49 @@ button {
   pointer-events: none;
 }
 
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--line);
+  transition: box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.swatch:hover {
+  transform: translateY(-1px);
+}
+
+.swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--bone);
+}
+
+/* Auto is a rule, not a colour, so it is marked rather than shown — a chip
+   filled with whatever it currently resolves to would look like a fixed choice
+   and lose the one thing that distinguishes it. */
+.swatch--auto {
+  position: relative;
+  background: var(--surface-3) !important;
+}
+
+.swatch--auto::after {
+  content: 'A';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-2);
+}
+
 /* Custom slider — no native range input anywhere in the app. */
 .slider {
   position: relative;
@@ -1670,6 +1713,25 @@ button {
 .columns--4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--gap-lg);
+}
+
+/* Five columns: the staff picker is a fixed-width object, so it takes what it
+   needs and the four editors share the rest. */
+.columns--staff {
+  grid-template-columns: auto repeat(4, minmax(0, 1fr));
+  gap: var(--gap-lg);
+}
+
+@media (max-width: 1400px) {
+  .columns--staff {
+    gap: var(--gap);
+  }
+}
+
+@media (max-width: 1100px) {
+  .columns--staff {
+    grid-template-columns: auto repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* A warning that informs rather than restricts — the control stays usable. */

@@ -259,6 +259,48 @@ export function Range({
   )
 }
 
+/**
+ * A row of colour chips.
+ *
+ * Not a colour picker. The OS dialog is out of the question — it drops
+ * someone else's design language into the middle of ours — and a hue-and-
+ * lightness pair costs two rows to answer a question that, for lines under
+ * music, has about ten good answers. So the answers are offered directly:
+ * derived neutrals that follow the page, and the palette's own hues, which are
+ * the colours already on the page and therefore the ones that will agree with
+ * it.
+ *
+ * '@auto' is first and stays a real option rather than a default that has been
+ * overwritten — a line set to Auto follows the page colour when that changes,
+ * and a line set to a hex does not. That difference is worth being able to get
+ * back to.
+ */
+export function Swatches({
+  value,
+  options,
+  onChange,
+}: {
+  value: string
+  options: { value: string; color: string; label: string }[]
+  onChange: (next: string) => void
+}) {
+  return (
+    <div className="swatches" role="group">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          className={o.value === '@auto' ? 'swatch swatch--auto' : 'swatch'}
+          style={{ background: o.color }}
+          aria-pressed={value === o.value}
+          aria-label={o.label}
+          title={o.label}
+          onClick={() => onChange(o.value)}
+        />
+      ))}
+    </div>
+  )
+}
+
 export function Switch({
   label,
   checked,

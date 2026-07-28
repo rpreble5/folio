@@ -32,7 +32,13 @@ import {
   type ColorConfig,
 } from '../core/palettes'
 import { HueWheel } from './HueWheel'
-import { StaffEditor } from './StaffEditor'
+import {
+  StaffItemEditor,
+  StaffPicker,
+  lineSwatches,
+  selectionName,
+  type Selection,
+} from './StaffEditor'
 import {
   ANCHOR_OPTIONS,
   DASH_KINDS,
@@ -57,7 +63,7 @@ import {
 } from '../core/theme'
 import { keyAt } from '../core/types'
 import { CVD_MODES, type CvdMode } from '../render/cvd'
-import { Field, Group, Pills, Range, ShapeMark, Switch, Tile } from './controls'
+import { Field, Group, Pills, Range, ShapeMark, Swatches, Switch, Tile } from './controls'
 
 type Tab = StudioTab
 
@@ -1057,12 +1063,16 @@ function StaffTab() {
   const patchLayout = useStore((s) => s.patchLayout)
   const { layout } = theme
   const isRoll = layout.mode === 'roll'
+  const [selected, setSelected] = useState<Selection>({ kind: 'line', index: 5 })
 
   const patchLine = (role: LineRole, patch: Partial<LineStyle>) =>
     patchLayout({ lines: { ...layout.lines, [role]: { ...layout.lines[role], ...patch } } })
 
+  const swatches = lineSwatches(theme.surface, buildPalette(theme.encodings.color).colors)
+
   // Only the lines this notation actually draws, so the editor never offers a
-  // control with nothing behind it.
+  // control with nothing behind it. The staff's own lines are edited through
+  // the picker rather than as a role, so they are not repeated here.
   const roles: { role: LineRole; label: string }[] = isRoll
     ? [
         { role: 'beat', label: 'Beat lines' },
@@ -1070,84 +1080,139 @@ function StaffTab() {
         { role: 'anchor', label: 'Anchor lines' },
       ]
     : [
-        { role: 'staff', label: 'Staff lines' },
         { role: 'bar', label: 'Barlines' },
         { role: 'ledger', label: 'Ledger lines' },
       ]
 
-  // One group per line role, side by side. Stacking them under the staff editor
-  // put the whole tab in a single column and left two empty — the reason this
-  // was the one tab that scrolled twice the panel's height.
-  const shown = isRoll ? roles : roles.filter((r) => r.role === 'bar' || r.role === 'ledger')
-
-  return (
-    <div className={`columns columns--${isRoll ? 4 : 3}`}>
-      <Group label={isRoll ? 'Reference' : 'Staff'}>
-        {!isRoll && (
-          <StaffEditor
-            staff={layout.staff}
-            base={layout.lines.staff}
-            surface={theme.surface}
-            onChange={(staff) => patchLayout({ staff })}
-          />
+  const lineGroup = ({ role, label }: { role: LineRole; label: string }) => {
+    const style = layout.lines[role]
+    return (
+      <Group label={label} key={role}>
+        <Switch label="Draw" checked={style.show} onChange={(show) => patchLine(role, { show })} />
+        {style.show && (
+          <>
+            <Swatches
+              value={style.color}
+              options={swatches}
+              onChange={(color) => patchLine(role, { color })}
+            />
+            <Pills
+              options={DASH_KINDS.map((d) => ({ value: d.id, label: d.label }))}
+              value={style.dash}
+              onChange={(dash) => patchLine(role, { dash })}
+            />
+            <Range
+              name="Weight"
+              display={style.width.toFixed(1)}
+              min={0.5}
+              max={5}
+              step={0.25}
+              value={style.width}
+              onChange={(width) => patchLine(role, { width })}
+            />
+            <Range
+              name="Strength"
+              display={`${Math.round(style.opacity * 100)}%`}
+              min={0.1}
+              max={1}
+              step={0.05}
+              value={style.opacity}
+              onChange={(opacity) => patchLine(role, { opacity })}
+            />
+          </>
         )}
-        {isRoll && (
+      </Group>
+    )
+  }
+
+  if (isRoll) {
+    return (
+      <div className="columns columns--4">
+        <Group label="Reference">
+          {/* Judging a mark against a line is far more precise than judging it in
+              empty space, so a roll with no horizontal reference makes pitch
+              needlessly hard to read. */}
           <Field name="Anchor on">
-            {/* Judging a mark against a line is far more precise than judging it
-                in empty space, so a roll with no horizontal reference makes
-                pitch needlessly hard to read. */}
             <Pills
               options={ANCHOR_OPTIONS.map((a) => ({ value: a.id, label: a.label }))}
               value={layout.anchorOn}
               onChange={(anchorOn) => patchLayout({ anchorOn })}
             />
           </Field>
+        </Group>
+        {roles.map(lineGroup)}
+      </div>
+    )
+  }
+
+  const base = layout.lines.staff
+
+  return (
+    <div className="columns columns--staff">
+      <Group label="Staff">
+        <StaffPicker
+          staff={layout.staff}
+          base={base}
+          surface={theme.surface}
+          selected={selected}
+          onSelect={setSelected}
+        />
+      </Group>
+
+      {/* The base every line starts from. Without it the only way to make the
+          whole staff heavier or a different colour was to edit ten lines one at
+          a time — the cascade existed in the data and not in the interface. */}
+      <Group label="All lines">
+        <Switch
+          label="Draw the staff"
+          checked={base.show}
+          onChange={(show) => patchLine('staff', { show })}
+        />
+        {base.show && (
+          <>
+            <Swatches
+              value={base.color}
+              options={swatches}
+              onChange={(color) => patchLine('staff', { color })}
+            />
+            <Pills
+              options={DASH_KINDS.map((d) => ({ value: d.id, label: d.label }))}
+              value={base.dash}
+              onChange={(dash) => patchLine('staff', { dash })}
+            />
+            <Range
+              name="Weight"
+              display={base.width.toFixed(1)}
+              min={0.5}
+              max={5}
+              step={0.25}
+              value={base.width}
+              onChange={(width) => patchLine('staff', { width })}
+            />
+            <Range
+              name="Strength"
+              display={`${Math.round(base.opacity * 100)}%`}
+              min={0.1}
+              max={1}
+              step={0.05}
+              value={base.opacity}
+              onChange={(opacity) => patchLine('staff', { opacity })}
+            />
+          </>
         )}
       </Group>
 
-      {shown.map(({ role, label }) => {
-          const style = layout.lines[role]
-          return (
-            <Group label={label} key={role}>
-            <div className="line-editor">
-              <Switch
-                label={label}
-                checked={style.show}
-                onChange={(show) => patchLine(role, { show })}
-              />
-              {style.show && (
-                <div className="line-editor__body">
-                  <Pills
-                    options={DASH_KINDS.map((d) => ({ value: d.id, label: d.label }))}
-                    value={style.dash}
-                    onChange={(dash) => patchLine(role, { dash })}
-                  />
-                  <div className="line-editor__sliders">
-                    <Range
-                      name="Weight"
-                      display={style.width.toFixed(1)}
-                      min={0.5}
-                      max={5}
-                      step={0.25}
-                      value={style.width}
-                      onChange={(width) => patchLine(role, { width })}
-                    />
-                    <Range
-                      name="Strength"
-                      display={`${Math.round(style.opacity * 100)}%`}
-                      min={0.1}
-                      max={1}
-                      step={0.05}
-                      value={style.opacity}
-                      onChange={(opacity) => patchLine(role, { opacity })}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-            </Group>
-          )
-        })}
+      <Group label={selectionName(selected)}>
+        <StaffItemEditor
+          staff={layout.staff}
+          base={base}
+          swatches={swatches}
+          selected={selected}
+          onChange={(staff) => patchLayout({ staff })}
+        />
+      </Group>
+
+      {roles.map(lineGroup)}
     </div>
   )
 }
