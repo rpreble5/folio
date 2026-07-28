@@ -22,7 +22,7 @@ import {
   type Surface,
   type TextureKind,
 } from '../core/theme'
-import { Field, Pills, Slider, Switch } from './controls'
+import { Field, Pills, Range, Switch } from './controls'
 
 const W = 188
 const PAD = 10
@@ -170,31 +170,24 @@ export function StaffEditor({ staff, base, surface, onChange }: Props) {
                 value={(current as LineStyle).dash}
                 onChange={(dash: DashKind) => patchLine(selected.index, { dash })}
               />
-              <div className="slider-pair">
-                <Field name="Weight" value={(current as LineStyle).width.toFixed(1)}>
-                  <Slider
-                    label="Line weight"
-                    min={0.5}
-                    max={5}
-                    step={0.25}
-                    value={(current as LineStyle).width}
-                    onChange={(width) => patchLine(selected.index, { width })}
-                  />
-                </Field>
-                <Field
-                  name="Strength"
-                  value={`${Math.round((current as LineStyle).opacity * 100)}%`}
-                >
-                  <Slider
-                    label="Line strength"
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    value={(current as LineStyle).opacity}
-                    onChange={(opacity) => patchLine(selected.index, { opacity })}
-                  />
-                </Field>
-              </div>
+              <Range
+                name="Weight"
+                display={(current as LineStyle).width.toFixed(1)}
+                min={0.5}
+                max={5}
+                step={0.25}
+                value={(current as LineStyle).width}
+                onChange={(width) => patchLine(selected.index, { width })}
+              />
+              <Range
+                name="Strength"
+                display={`${Math.round((current as LineStyle).opacity * 100)}%`}
+                min={0.1}
+                max={1}
+                step={0.05}
+                value={(current as LineStyle).opacity}
+                onChange={(opacity) => patchLine(selected.index, { opacity })}
+              />
             </>
           )}
         </>
@@ -207,19 +200,15 @@ export function StaffEditor({ staff, base, surface, onChange }: Props) {
           />
           {(current as SpaceStyle).fill !== '@none' && (
             <>
-              <Field
+              <Range
                 name="Strength"
-                value={`${Math.round((current as SpaceStyle).opacity * 100)}%`}
-              >
-                <Slider
-                  label="Shading strength"
-                  min={0.02}
-                  max={0.6}
-                  step={0.02}
-                  value={(current as SpaceStyle).opacity}
-                  onChange={(opacity) => patchSpace(selected.index, { opacity })}
-                />
-              </Field>
+                display={`${Math.round((current as SpaceStyle).opacity * 100)}%`}
+                min={0.02}
+                max={0.6}
+                step={0.02}
+                value={(current as SpaceStyle).opacity}
+                onChange={(opacity) => patchSpace(selected.index, { opacity })}
+              />
               <Field name="Texture">
                 <Pills
                   options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}

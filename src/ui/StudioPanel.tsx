@@ -57,7 +57,7 @@ import {
 } from '../core/theme'
 import { keyAt } from '../core/types'
 import { CVD_MODES, type CvdMode } from '../render/cvd'
-import { Field, Group, Pills, ShapeMark, Slider, Switch, Tile } from './controls'
+import { Field, Group, Pills, Range, ShapeMark, Switch, Tile } from './controls'
 
 type Tab = StudioTab
 
@@ -407,26 +407,24 @@ function ColourTab() {
             which bundles it with lightness into six named points — wanting
             Bright-but-calmer should not mean hunting for a nearby preset. */}
         <div className="slider-pair">
-          <Field name="Saturation" value={`${Math.round(color.saturation * 100)}%`}>
-            <Slider
-              label="Saturation"
-              min={0}
-              max={1.8}
-              step={0.05}
-              value={color.saturation}
-              onChange={(saturation) => patchColor({ saturation })}
-            />
-          </Field>
-          <Field name="Rotate all" value={`${color.rotate}°`}>
-            <Slider
-              label="Rotate hue"
-              min={0}
-              max={345}
-              step={15}
-              value={color.rotate}
-              onChange={(rotate) => patchColor({ rotate })}
-            />
-          </Field>
+          <Range
+        name="Saturation"
+        display={`${Math.round(color.saturation * 100)}%`}
+        min={0}
+        max={1.8}
+        step={0.05}
+        value={color.saturation}
+        onChange={(saturation) => patchColor({ saturation })}
+      />
+          <Range
+        name="Rotate all"
+        display={`${color.rotate}°`}
+        min={0}
+        max={345}
+        step={15}
+        value={color.rotate}
+        onChange={(rotate) => patchColor({ rotate })}
+      />
         </div>
         </Group>
       )}
@@ -586,51 +584,47 @@ function MarksTab() {
         </div>
 
         <div className="slider-pair">
-        <Field name="Thickness" value={`${Math.round(trail.thickness * 100)}%`}>
-          <Slider
-            label="Trail thickness"
-            min={0}
-            max={1}
-            step={0.02}
-            value={trail.thickness}
-            onChange={(thickness) => patchTrail({ thickness })}
-          />
-        </Field>
-        <Field name="Taper" value={`${Math.round(trail.taper * 100)}%`}>
-          <Slider
-            label="Trail taper"
-            min={0}
-            max={1}
-            step={0.02}
-            value={trail.taper}
-            onChange={(taper) => patchTrail({ taper })}
-          />
-        </Field>
-        <Field name="Melt into note" value={`${Math.round(trail.melt * 100)}%`}>
-          <Slider
-            label="Trail melt"
-            min={0}
-            max={1}
-            step={0.02}
-            value={trail.melt}
-            onChange={(melt) => patchTrail({ melt })}
-          />
-        </Field>
-        <Field name="Strength" value={`${Math.round(trail.opacity * 100)}%`}>
-          <Slider
-            label="Trail strength"
-            min={0}
-            max={1}
-            step={0.05}
-            value={trail.opacity}
-            onChange={(opacity) => patchTrail({ opacity })}
-          />
-        </Field>
+        <Range
+        name="Thickness"
+        display={`${Math.round(trail.thickness * 100)}%`}
+        min={0}
+        max={1}
+        step={0.02}
+        value={trail.thickness}
+        onChange={(thickness) => patchTrail({ thickness })}
+      />
+        <Range
+        name="Taper"
+        display={`${Math.round(trail.taper * 100)}%`}
+        min={0}
+        max={1}
+        step={0.02}
+        value={trail.taper}
+        onChange={(taper) => patchTrail({ taper })}
+      />
+        <Range
+        name="Melt into note"
+        display={`${Math.round(trail.melt * 100)}%`}
+        min={0}
+        max={1}
+        step={0.02}
+        value={trail.melt}
+        onChange={(melt) => patchTrail({ melt })}
+      />
+        <Range
+        name="Strength"
+        display={`${Math.round(trail.opacity * 100)}%`}
+        min={0}
+        max={1}
+        step={0.05}
+        value={trail.opacity}
+        onChange={(opacity) => patchTrail({ opacity })}
+      />
         </div>
       </Group>
 
       <Group label="Texture">
-        <Field name="Texture">
+        <Field>
           <Pills
             options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}
             value={texture.kind}
@@ -640,26 +634,24 @@ function MarksTab() {
 
         {texture.kind !== 'none' && (
           <>
-            <Field name="Scale" value={`${texture.scale.toFixed(2)}×`}>
-              <Slider
-                label="Texture scale"
-                min={0.2}
-                max={2.5}
-                step={0.05}
-                value={texture.scale}
-                onChange={(scale) => patchTexture({ scale })}
-              />
-            </Field>
-            <Field name="Strength" value={`${Math.round(texture.strength * 100)}%`}>
-              <Slider
-                label="Texture strength"
-                min={0.05}
-                max={0.8}
-                step={0.05}
-                value={texture.strength}
-                onChange={(strength) => patchTexture({ strength })}
-              />
-            </Field>
+            <Range
+        name="Scale"
+        display={`${texture.scale.toFixed(2)}×`}
+        min={0.2}
+        max={2.5}
+        step={0.05}
+        value={texture.scale}
+        onChange={(scale) => patchTexture({ scale })}
+      />
+            <Range
+        name="Strength"
+        display={`${Math.round(texture.strength * 100)}%`}
+        min={0.05}
+        max={0.8}
+        step={0.05}
+        value={texture.strength}
+        onChange={(strength) => patchTexture({ strength })}
+      />
             <Field name="Ink">
               <Pills
                 options={[
@@ -787,16 +779,15 @@ function EmphasisTab() {
           />
         </Field>
         {color.lightnessBy !== 'none' && (
-          <Field name="Spread" value={`${Math.round(color.lightnessSpread * 100)}%`}>
-            <Slider
-              label="Brightness spread"
-              min={0.04}
-              max={0.34}
-              step={0.02}
-              value={color.lightnessSpread}
-              onChange={(lightnessSpread) => patchColor({ lightnessSpread })}
-            />
-          </Field>
+          <Range
+        name="Spread"
+        display={`${Math.round(color.lightnessSpread * 100)}%`}
+        min={0.04}
+        max={0.34}
+        step={0.02}
+        value={color.lightnessSpread}
+        onChange={(lightnessSpread) => patchColor({ lightnessSpread })}
+      />
         )}
         <p className="note-text">{lightSource?.note}</p>
       </Group>
@@ -817,16 +808,15 @@ function EmphasisTab() {
         {/* Labelled by how far it drops, not by what is left, so dragging right
             and the number going up agree with each other. */}
         {color.chromaBy !== 'none' && (
-          <Field name="Drop by" value={`${Math.round(color.chromaSpread * 100)}%`}>
-            <Slider
-              label="Saturation drop"
-              min={0}
-              max={1}
-              step={0.05}
-              value={color.chromaSpread}
-              onChange={(chromaSpread) => patchColor({ chromaSpread })}
-            />
-          </Field>
+          <Range
+        name="Drop by"
+        display={`${Math.round(color.chromaSpread * 100)}%`}
+        min={0}
+        max={1}
+        step={0.05}
+        value={color.chromaSpread}
+        onChange={(chromaSpread) => patchColor({ chromaSpread })}
+      />
         )}
         <p className="note-text">
           {chromaSource?.note}
@@ -949,36 +939,31 @@ function LabelsTab() {
           />
         </Field>
         {encodings.labelInk === 'tint' && (
-          <Field
+          <Range
             name="Shade"
-            value={
+            display={
               encodings.labelTint === 0
                 ? 'same as note'
                 : `${Math.round(Math.abs(encodings.labelTint) * 100)}% ${
                     encodings.labelTint < 0 ? 'darker' : 'lighter'
                   }`
             }
-          >
-            <Slider
-              label="Label shade"
-              min={-0.55}
-              max={0.55}
-              step={0.01}
-              value={encodings.labelTint}
-              onChange={(labelTint) => patchEncodings({ labelTint })}
-            />
-          </Field>
-        )}
-        <Field name="Fade" value={`${Math.round(encodings.labelOpacity * 100)}%`}>
-          <Slider
-            label="Label opacity"
-            min={0.1}
-            max={1}
-            step={0.05}
-            value={encodings.labelOpacity}
-            onChange={(labelOpacity) => patchEncodings({ labelOpacity })}
+            min={-0.55}
+            max={0.55}
+            step={0.01}
+            value={encodings.labelTint}
+            onChange={(labelTint) => patchEncodings({ labelTint })}
           />
-        </Field>
+        )}
+        <Range
+        name="Fade"
+        display={`${Math.round(encodings.labelOpacity * 100)}%`}
+        min={0.1}
+        max={1}
+        step={0.05}
+        value={encodings.labelOpacity}
+        onChange={(labelOpacity) => patchEncodings({ labelOpacity })}
+      />
         {/* Directly under the controls that cause it. Measured over the notes
             actually on the page, so it counts the colours this piece uses and
             any overrides applied to it — sweeping the palette instead warned
@@ -1025,36 +1010,33 @@ function LabelsTab() {
 
       <Group label="Size">
         <div className="slider-pair">
-          <Field name="Size" value={`${Math.round(encodings.labelScale * 100)}%`}>
-            <Slider
-              label="Label size"
-              min={0.6}
-              max={1.6}
-              step={0.05}
-              value={encodings.labelScale}
-              onChange={(labelScale) => patchEncodings({ labelScale })}
-            />
-          </Field>
-          <Field name="Weight" value={`${encodings.labelWeight}`}>
-            <Slider
-              label="Label weight"
-              min={300}
-              max={800}
-              step={50}
-              value={encodings.labelWeight}
-              onChange={(labelWeight) => patchEncodings({ labelWeight })}
-            />
-          </Field>
-          <Field name="Tracking" value={`${encodings.labelTracking.toFixed(1)}`}>
-            <Slider
-              label="Label tracking"
-              min={-0.5}
-              max={2}
-              step={0.1}
-              value={encodings.labelTracking}
-              onChange={(labelTracking) => patchEncodings({ labelTracking })}
-            />
-          </Field>
+          <Range
+        name="Size"
+        display={`${Math.round(encodings.labelScale * 100)}%`}
+        min={0.6}
+        max={1.6}
+        step={0.05}
+        value={encodings.labelScale}
+        onChange={(labelScale) => patchEncodings({ labelScale })}
+      />
+          <Range
+        name="Weight"
+        display={`${encodings.labelWeight}`}
+        min={300}
+        max={800}
+        step={50}
+        value={encodings.labelWeight}
+        onChange={(labelWeight) => patchEncodings({ labelWeight })}
+      />
+          <Range
+        name="Tracking"
+        display={`${encodings.labelTracking.toFixed(1)}`}
+        min={-0.5}
+        max={2}
+        step={0.1}
+        value={encodings.labelTracking}
+        onChange={(labelTracking) => patchEncodings({ labelTracking })}
+      />
         </div>
       </Group>
     </div>
@@ -1141,26 +1123,24 @@ function StaffTab() {
                     onChange={(dash) => patchLine(role, { dash })}
                   />
                   <div className="line-editor__sliders">
-                    <Field name="Weight" value={style.width.toFixed(1)}>
-                      <Slider
-                        label={`${label} weight`}
-                        min={0.5}
-                        max={5}
-                        step={0.25}
-                        value={style.width}
-                        onChange={(width) => patchLine(role, { width })}
-                      />
-                    </Field>
-                    <Field name="Strength" value={`${Math.round(style.opacity * 100)}%`}>
-                      <Slider
-                        label={`${label} strength`}
-                        min={0.1}
-                        max={1}
-                        step={0.05}
-                        value={style.opacity}
-                        onChange={(opacity) => patchLine(role, { opacity })}
-                      />
-                    </Field>
+                    <Range
+                      name="Weight"
+                      display={style.width.toFixed(1)}
+                      min={0.5}
+                      max={5}
+                      step={0.25}
+                      value={style.width}
+                      onChange={(width) => patchLine(role, { width })}
+                    />
+                    <Range
+                      name="Strength"
+                      display={`${Math.round(style.opacity * 100)}%`}
+                      min={0.1}
+                      max={1}
+                      step={0.05}
+                      value={style.opacity}
+                      onChange={(opacity) => patchLine(role, { opacity })}
+                    />
                   </div>
                 </div>
               )}
@@ -1231,57 +1211,66 @@ function PageTab() {
             everything else is measured against — so they share a grid rather
             than running the column past the panel's height. */}
         <div className="slider-pair">
-          <Field name="Note height" value={`${layout.laneHeight}`}>
-            <Slider
-              label="Note height"
-              min={7}
-              max={26}
-              value={layout.laneHeight}
-              onChange={(laneHeight) => patchLayout({ laneHeight })}
-            />
-          </Field>
-          <Field
-            name="Bars per line"
-            value={layout.barsPerSystem > 0 ? `${layout.barsPerSystem}` : 'Auto'}
-          >
-            <Slider
-              label="Bars per line"
-              min={0}
-              max={12}
-              value={layout.barsPerSystem}
-              onChange={(barsPerSystem) => patchLayout({ barsPerSystem })}
-            />
-          </Field>
-          <Field name="Between lines" value={`${layout.systemGap}`}>
-            <Slider
-              label="Space between lines"
-              min={16}
-              max={110}
-              value={layout.systemGap}
-              onChange={(systemGap) => patchLayout({ systemGap })}
-            />
-          </Field>
+          <Range
+        name="Note height"
+        display={`${layout.laneHeight}`}
+        min={7}
+        max={26}
+        value={layout.laneHeight}
+        onChange={(laneHeight) => patchLayout({ laneHeight })}
+      />
+          <Range
+        name="Bars per line"
+        display={layout.barsPerSystem > 0 ? `${layout.barsPerSystem}` : 'Auto'}
+        min={0}
+        max={12}
+        value={layout.barsPerSystem}
+        onChange={(barsPerSystem) => patchLayout({ barsPerSystem })}
+      />
+          <Range
+        name="Between lines"
+        display={`${layout.systemGap}`}
+        min={16}
+        max={110}
+        value={layout.systemGap}
+        onChange={(systemGap) => patchLayout({ systemGap })}
+      />
         </div>
       </Group>
 
       <Group label="Page">
-        <div className="tiles">
+        {/* Swatches, not labelled tiles. A page colour is a colour — the name
+            under it cost a row each and told you nothing the swatch did not.
+            Each still previews its derived grid and ink, since those follow. */}
+        <div className="page-swatches">
           {PAGES.map((page) => (
-            <Tile
+            <button
               key={page.id}
-              className="page-tile"
-              selected={theme.surface.background.toLowerCase() === page.color.toLowerCase()}
+              className="page-swatch"
+              style={{ background: page.color }}
+              aria-pressed={theme.surface.background.toLowerCase() === page.color.toLowerCase()}
               onClick={() => setPage(page.color)}
               title={page.name}
             >
-              {/* The rest of the surface is derived from the page colour, so the
-                  swatch previews its own grid and text too. */}
-              <span className="page-tile__swatch" style={{ background: page.color }}>
-                <i style={{ background: makeSurface(page.color).gridStrong }} />
-                <i style={{ background: makeSurface(page.color).text }} />
-              </span>
-              <span className="tile__name">{page.name}</span>
-            </Tile>
+              <i
+                style={{
+                  background: makeSurface(page.color).gridStrong,
+                  width: 11,
+                  height: 3,
+                  borderRadius: 2,
+                  display: 'block',
+                }}
+              />
+              <i
+                style={{
+                  background: makeSurface(page.color).text,
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  display: 'block',
+                }}
+              />
+            </button>
           ))}
         </div>
 
@@ -1297,21 +1286,17 @@ function PageTab() {
           />
         </Field>
         {layout.pageTexture.kind !== 'none' && (
-          <Field
+          <Range
             name="Grain strength"
-            value={`${Math.round(layout.pageTexture.strength * 100)}%`}
-          >
-            <Slider
-              label="Page texture strength"
-              min={0.02}
-              max={0.3}
-              step={0.02}
-              value={layout.pageTexture.strength}
-              onChange={(strength) =>
-                patchLayout({ pageTexture: { ...layout.pageTexture, strength } })
-              }
-            />
-          </Field>
+            display={`${Math.round(layout.pageTexture.strength * 100)}%`}
+            min={0.02}
+            max={0.3}
+            step={0.02}
+            value={layout.pageTexture.strength}
+            onChange={(strength) =>
+              patchLayout({ pageTexture: { ...layout.pageTexture, strength } })
+            }
+          />
         )}
 
       </Group>

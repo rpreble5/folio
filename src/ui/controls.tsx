@@ -164,6 +164,101 @@ export function Slider({
   )
 }
 
+/**
+ * A slider that *is* its own row.
+ *
+ * The Field-above-Slider pattern spends two rows on every number: one for the
+ * name and readout, one for the track. Twenty of those is most of why the panel
+ * scrolled. Here the row is the track — the fill shows position, the name sits
+ * on the left, the value on the right, and the whole thing is one 28px line
+ * instead of fifty.
+ *
+ * Reading a fraction off a filled bar is also a better fit than a thumb on a
+ * rail for what these actually control: almost every one is a proportion, and a
+ * bar answers "how much of the way along" at a glance where a thumb has to be
+ * measured against its ends.
+ */
+export function Range({
+  name,
+  value,
+  display,
+  min,
+  max,
+  step = 1,
+  onChange,
+}: {
+  name: string
+  value: number
+  /** What to show on the right. Defaults to the raw value. */
+  display?: string
+  min: number
+  max: number
+  step?: number
+  onChange: (next: number) => void
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef(false)
+
+  const clamp = (n: number) => Math.min(max, Math.max(min, n))
+  const quantise = (n: number) => Math.round(n / step) * step
+  const fraction = (clamp(value) - min) / (max - min || 1)
+
+  const setFromClientX = useCallback(
+    (clientX: number) => {
+      const el = trackRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const t = rect.width === 0 ? 0 : (clientX - rect.left) / rect.width
+      onChange(clamp(quantise(min + Math.min(1, Math.max(0, t)) * (max - min))))
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [min, max, step, onChange],
+  )
+
+  return (
+    <div
+      ref={trackRef}
+      className="range"
+      role="slider"
+      tabIndex={0}
+      aria-label={name}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={value}
+      aria-valuetext={display}
+      onPointerDown={(e) => {
+        dragging.current = true
+        e.currentTarget.setPointerCapture(e.pointerId)
+        setFromClientX(e.clientX)
+      }}
+      onPointerMove={(e) => {
+        if (dragging.current) setFromClientX(e.clientX)
+      }}
+      onPointerUp={(e) => {
+        dragging.current = false
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      }}
+      onKeyDown={(e) => {
+        const big = (max - min) / 10
+        const go = (n: number) => {
+          e.preventDefault()
+          onChange(clamp(quantise(n)))
+        }
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') go(value - step)
+        else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') go(value + step)
+        else if (e.key === 'PageDown') go(value - big)
+        else if (e.key === 'PageUp') go(value + big)
+        else if (e.key === 'Home') go(min)
+        else if (e.key === 'End') go(max)
+      }}
+    >
+      <div className="range__fill" style={{ width: `${fraction * 100}%` }} />
+      <span className="range__name">{name}</span>
+      <span className="range__value">{display ?? value}</span>
+    </div>
+  )
+}
+
 export function Switch({
   label,
   checked,
