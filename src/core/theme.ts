@@ -212,6 +212,39 @@ export type LabelCase = 'as-is' | 'upper' | 'lower'
  */
 export type LabelInk = 'contrast' | 'tint' | 'ink'
 
+/**
+ * Which way a tinted label moves from its note's colour.
+ *
+ * 'auto' is the one worth having. A fixed direction only ever suits half a
+ * palette — push everything darker and the labels on dark notes disappear,
+ * push everything lighter and the ones on pale notes do. Deciding per note
+ * from the note's own lightness means one setting reads on every colour, which
+ * is what a twelve-hue palette needs to be usable at all.
+ */
+export type TintDir = 'auto' | 'darker' | 'lighter'
+
+export const TINT_DIRS: { id: TintDir; label: string }[] = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'darker', label: 'Darker' },
+  { id: 'lighter', label: 'Lighter' },
+]
+
+/**
+ * Signed shade for this note: away from mid-lightness, so a pale note gets
+ * darker text and a deep one gets lighter.
+ *
+ * The threshold is OKLab 0.5 rather than a luminance midpoint, because the
+ * question here is not "which of black or white contrasts" but "which
+ * direction has room left" — and in a perceptually uniform space that is
+ * simply which side of the middle the note sits on.
+ */
+export function tintDelta(dir: TintDir, amount: number, noteFill: string): number {
+  const magnitude = Math.abs(amount)
+  if (dir === 'darker') return -magnitude
+  if (dir === 'lighter') return magnitude
+  return lightnessOf(noteFill) > 0.5 ? -magnitude : magnitude
+}
+
 export const LABEL_INKS: { id: LabelInk; label: string }[] = [
   { id: 'contrast', label: 'Auto' },
   { id: 'tint', label: 'Note shade' },
@@ -406,11 +439,12 @@ export interface Encodings {
   labelInk: LabelInk
   /**
    * How far a 'tint' label moves from the note's colour, in OKLab lightness.
-   * Signed: negative is darker, positive is lighter. Zero would make the text
-   * the same colour as the note it sits on, which is why the Studio measures
-   * the result rather than trusting the number.
+   * A magnitude — the direction comes from labelTintDir. Zero would make the
+   * text the same colour as the note it sits on, which is why the Studio
+   * measures the result rather than trusting the number.
    */
   labelTint: number
+  labelTintDir: TintDir
   trail: TrailConfig
   texture: TextureConfig
   /**
@@ -461,7 +495,18 @@ export function makeSurface(background: string): Surface {
 }
 
 /** Resolve a line's colour, honouring the '@auto' sentinel. */
-export function lineColor(line: LineStyle, role: LineRole, surface: Surface): string {
+/**
+ * '@note' is a rule, not a colour: the line wears the colour of the pitch it
+ * sits on, and keeps wearing it when the palette changes. Only staff lines have
+ * a pitch, so anything else asking for it falls back to the derived default.
+ */
+export function lineColor(
+  line: LineStyle,
+  role: LineRole,
+  surface: Surface,
+  noteColor?: string,
+): string {
+  if (line.color === '@note') return noteColor ?? surface.staffLine
   if (line.color !== '@auto') return line.color
   switch (role) {
     case 'beat':
@@ -577,6 +622,7 @@ export function labelBackdrop(fill: string, filled: boolean, theme: Theme): stri
 function inkFor(
   ink: LabelInk,
   tint: number,
+  dir: TintDir,
   noteFill: string,
   backdrop: string,
   surface: Surface,
@@ -586,7 +632,7 @@ function inkFor(
     case 'ink':
       return surface.text
     case 'tint':
-      return shiftLightness(noteFill, tint)
+      return shiftLightness(noteFill, tintDelta(dir, tint, noteFill))
     case 'contrast':
       // A palette may name its own on-colour, which is a considered choice and
       // beats a computed black or white. Off the note there is no such choice.
@@ -626,6 +672,7 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
     labelColor: inkFor(
       theme.encodings.labelInk,
       theme.encodings.labelTint,
+      theme.encodings.labelTintDir,
       fill,
       labelBackdrop(fill, !outlined, theme),
       theme.surface,
@@ -651,6 +698,7 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
       base.labelColor = inkFor(
         theme.encodings.labelInk,
         theme.encodings.labelTint,
+        theme.encodings.labelTintDir,
         s.fill,
         labelBackdrop(s.fill, base.filled, theme),
         theme.surface,

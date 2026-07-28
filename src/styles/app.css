@@ -915,9 +915,25 @@ button {
   box-shadow: 0 0 0 2px var(--bone);
 }
 
-/* Auto is a rule, not a colour, so it is marked rather than shown — a chip
-   filled with whatever it currently resolves to would look like a fixed choice
-   and lose the one thing that distinguishes it. */
+/* Both of these are rules rather than colours, so they are marked rather than
+   shown — a chip filled with whatever it currently resolves to would look like
+   a fixed choice and lose the one thing that distinguishes it. */
+.swatch--note {
+  position: relative;
+  background: var(--surface-3) !important;
+}
+
+.swatch--note::after {
+  content: '♪';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
 .swatch--auto {
   position: relative;
   background: var(--surface-3) !important;

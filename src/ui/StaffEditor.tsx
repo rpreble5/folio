@@ -77,9 +77,14 @@ const DEFAULT_SPACE: SpaceStyle = { fill: '@none', opacity: 0.14, texture: 'none
 export function lineSwatches(
   surface: Surface,
   palette: string[],
+  /** Staff lines sit at a pitch, so they can also match that pitch's colour. */
+  matchable = false,
 ): { value: string; color: string; label: string }[] {
   return [
     { value: '@auto', color: surface.staffLine, label: 'Follow the page' },
+    ...(matchable
+      ? [{ value: '@note', color: surface.staffLine, label: 'Match this line’s note' }]
+      : []),
     { value: surface.grid, color: surface.grid, label: 'Faint' },
     { value: surface.gridStrong, color: surface.gridStrong, label: 'Medium' },
     { value: surface.muted, color: surface.muted, label: 'Strong' },
@@ -98,12 +103,15 @@ export function StaffPicker({
   staff,
   base,
   surface,
+  noteColors,
   selected,
   onSelect,
 }: {
   staff: StaffStyle
   base: LineStyle
   surface: Surface
+  /** What each line resolves to when set to match its own note. */
+  noteColors: string[]
   selected: Selection
   onSelect: (sel: Selection) => void
 }) {
@@ -161,7 +169,7 @@ export function StaffPicker({
               x2={W - 4}
               y1={y}
               y2={y}
-              stroke={style.show ? lineColor(style, 'staff', surface) : surface.grid}
+              stroke={style.show ? lineColor(style, 'staff', surface, noteColors[i]) : surface.grid}
               strokeWidth={style.show ? Math.max(0.8, style.width) : 1}
               strokeDasharray={style.show ? dashArray(style.dash, style.width) : '1 3'}
               opacity={style.show ? style.opacity : 0.4}

@@ -4,6 +4,8 @@ import { diatonicIndex, keyboardPosition, octaveOf, pitchClass } from '../core/p
 import type { LineRole, LineStyle, Surface, Theme } from '../core/theme'
 import type { LabelPlace } from '../core/theme'
 import { NO_TEXTURE, dashArray, fontStack, lineColor, staffLineStyle } from '../core/theme'
+import { buildPalette, colorForPitch } from '../core/palettes'
+import { keyAt } from '../core/types'
 import type { Layout, System } from './layout'
 import { NoteGlyph } from './NoteGlyph'
 import { CvdFilters, cvdFilterUrl, type CvdMode } from './cvd'
@@ -41,6 +43,9 @@ const TREBLE_STAFF = [30, 32, 34, 36, 38]
 /** All ten staff lines, bottom to top, as diatonic indices. */
 export const STAFF_LINES = [...BASS_STAFF, ...TREBLE_STAFF]
 
+/** The same ten lines as MIDI: G2 B2 D3 F3 A3, then E4 G4 B4 D5 F5. */
+const STAFF_LINE_MIDI = [43, 47, 50, 53, 57, 64, 67, 71, 74, 77]
+
 /** Where a label sits vertically, given its placement. */
 function labelY(
   placed: { y: number; height: number },
@@ -56,9 +61,14 @@ const KEY_WHITE = '#eef1f7'
 const KEY_BLACK = '#171b24'
 
 /** Turn a LineStyle into the SVG stroke attributes for one line. */
-function strokeProps(line: LineStyle, role: LineRole, surface: Surface) {
+function strokeProps(
+  line: LineStyle,
+  role: LineRole,
+  surface: Surface,
+  noteColor?: string,
+) {
   return {
-    stroke: lineColor(line, role, surface),
+    stroke: lineColor(line, role, surface, noteColor),
     strokeWidth: line.width,
     strokeDasharray: dashArray(line.dash, line.width),
     opacity: line.opacity,
@@ -107,6 +117,16 @@ export function ScoreView({
 
   const filter = cvdFilterUrl(cvd)
   const pageFill = textureFill(cfg.pageTexture)
+
+  // Resolved once for the page: which colour each staff line would wear if it
+  // is set to match its note. Keyed off the score's opening key, since a line
+  // is a fixed pitch and cannot follow a modulation the way a note does.
+  const staffLineColors = useMemo(() => {
+    if (!isStaff) return []
+    const palette = buildPalette(theme.encodings.color)
+    const key = keyAt(score, 0)
+    return STAFF_LINE_MIDI.map((midi) => colorForPitch(palette, midi, key))
+  }, [isStaff, theme.encodings.color, score])
 
   return (
     <svg
@@ -165,6 +185,7 @@ export function ScoreView({
                 onSelectNote={onSelectNote}
                 yFor={yFor}
                 isStaff={isStaff}
+                staffLineColors={staffLineColors}
               />
             )
           })}
@@ -187,6 +208,7 @@ interface SystemProps {
   onSelectNote: (id: string | null, at?: { x: number; y: number }) => void
   yFor: (pos: number) => number
   isStaff: boolean
+  staffLineColors: string[]
 }
 
 function SystemGroup({
@@ -202,6 +224,7 @@ function SystemGroup({
   onSelectNote,
   yFor,
   isStaff,
+  staffLineColors,
 }: SystemProps) {
   const { surface, layout: cfg, encodings } = theme
   const systemWidth = (system.endBeat - system.startBeat) * layout.beatWidth
@@ -276,7 +299,9 @@ function SystemGroup({
           )
         })}
 
-      {/* Staff lines, each able to override the shared style. */}
+      {/* Staff lines, each able to override the shared style — and each able to
+          wear the colour of the pitch it sits on, which is what keeps a matched
+          line matched after the palette is retuned. */}
       {isStaff &&
         STAFF_LINES.map((di, i) => {
           const style = staffLineStyle(cfg.staff, i, cfg.lines.staff)
@@ -288,7 +313,7 @@ function SystemGroup({
               x2={layout.gutter + systemWidth}
               y1={yFor(di) + layout.noteHeight / 2}
               y2={yFor(di) + layout.noteHeight / 2}
-              {...strokeProps(style, 'staff', surface)}
+              {...strokeProps(style, 'staff', surface, staffLineColors[i])}
             />
           )
         })}
@@ -432,7 +457,7 @@ function SystemGroup({
                   fillOpacity={encodings.labelOpacity}
                   fontSize={labelSize}
                   fontWeight={encodings.labelWeight}
-                  fontFamily={fontStack(encodings.labelFont)}
+                  style={{ fontFamily: fontStack(encodings.labelFont) }}
                   letterSpacing={encodings.labelTracking}
                   textAnchor="middle"
                   pointerEvents="none"

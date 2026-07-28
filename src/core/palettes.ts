@@ -663,6 +663,39 @@ export function colorFor(palette: Palette, note: NoteEvent, key: KeyMark): strin
   return palette.colors[index] ?? palette.colors[0]
 }
 
+/**
+ * The colour a given pitch would be drawn in, without a note to ask about.
+ *
+ * Staff lines each sit at a fixed pitch — the bottom one is always G2 — so a
+ * line can be told to wear that pitch's colour and then keep wearing it as the
+ * palette is retuned. That is the point: matching by *rule* rather than by
+ * copying a hex means the line still agrees with the notes after the hue wheel
+ * has been spun.
+ *
+ * Spelling is assumed natural, which every staff line is.
+ */
+export function colorForPitch(palette: Palette, midi: number, key: KeyMark): string {
+  switch (palette.domain) {
+    case 'pitchClass':
+      return palette.colors[pitchClass(midi)] ?? palette.colors[0]
+    case 'letter': {
+      const letter = LETTER_OF.get(pitchClass(midi))
+      return palette.colors[letter ?? 0] ?? palette.colors[0]
+    }
+    case 'scaleDegree':
+      return palette.colors[scaleDegree(midi, key)] ?? palette.colors[0]
+    case 'octave':
+      return (
+        palette.colors[Math.max(0, Math.min(palette.colors.length - 1, octaveOf(midi)))] ??
+        palette.colors[0]
+      )
+    // Hand and fixed carry nothing a line could match, so they fall back to the
+    // first colour rather than pretending.
+    default:
+      return palette.colors[0]
+  }
+}
+
 export function onColorFor(palette: Palette, note: NoteEvent, key: KeyMark): string {
   const index = paletteIndex(palette, note, key)
   if (usesAlt(palette, note)) return palette.altOnColor?.[index] ?? INK

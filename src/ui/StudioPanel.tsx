@@ -24,6 +24,7 @@ import {
   CHROMA_SOURCES,
   LIGHTNESS_SOURCES,
   buildPalette,
+  colorForPitch,
   hasHueShift,
   noteHue,
   slotCount,
@@ -46,6 +47,7 @@ import {
   LABEL_INKS,
   LABEL_TARGETS,
   NO_TEXTURE,
+  TINT_DIRS,
   OUTLINE_TARGETS,
   TEXTURE_KINDS,
   contrastRatio,
@@ -58,6 +60,7 @@ import {
   type LineRole,
   type LineStyle,
   type OutlineWhat,
+  type TintDir,
   type TextureConfig,
   type TrailConfig,
 } from '../core/theme'
@@ -945,21 +948,29 @@ function LabelsTab() {
           />
         </Field>
         {encodings.labelInk === 'tint' && (
-          <Range
-            name="Shade"
-            display={
-              encodings.labelTint === 0
-                ? 'same as note'
-                : `${Math.round(Math.abs(encodings.labelTint) * 100)}% ${
-                    encodings.labelTint < 0 ? 'darker' : 'lighter'
-                  }`
-            }
-            min={-0.55}
-            max={0.55}
-            step={0.01}
-            value={encodings.labelTint}
-            onChange={(labelTint) => patchEncodings({ labelTint })}
-          />
+          <>
+            {/* Auto decides per note from the note's own lightness, so one
+                setting reads on a pale yellow and a deep blue alike. A fixed
+                direction can only ever suit half a palette. */}
+            <Pills
+              options={TINT_DIRS.map((d) => ({ value: d.id, label: d.label }))}
+              value={encodings.labelTintDir}
+              onChange={(labelTintDir: TintDir) => patchEncodings({ labelTintDir })}
+            />
+            <Range
+              name="Shade"
+              display={
+                encodings.labelTint === 0
+                  ? 'same as note'
+                  : `${Math.round(encodings.labelTint * 100)}%`
+              }
+              min={0}
+              max={0.55}
+              step={0.01}
+              value={encodings.labelTint}
+              onChange={(labelTint) => patchEncodings({ labelTint })}
+            />
+          </>
         )}
         <Range
         name="Fade"
@@ -1058,8 +1069,12 @@ function LabelsTab() {
  * behind one click target, and page colour, size and grain had nothing to do
  * with any of them beyond both being "not the notes".
  */
+/** G2 B2 D3 F3 A3, then E4 G4 B4 D5 F5 — the ten staff lines as MIDI. */
+const STAFF_LINE_MIDI = [43, 47, 50, 53, 57, 64, 67, 71, 74, 77]
+
 function StaffTab() {
   const theme = useStore((s) => s.theme)
+  const score = useStore((s) => s.score)
   const patchLayout = useStore((s) => s.patchLayout)
   const { layout } = theme
   const isRoll = layout.mode === 'roll'
@@ -1068,7 +1083,14 @@ function StaffTab() {
   const patchLine = (role: LineRole, patch: Partial<LineStyle>) =>
     patchLayout({ lines: { ...layout.lines, [role]: { ...layout.lines[role], ...patch } } })
 
-  const swatches = lineSwatches(theme.surface, buildPalette(theme.encodings.color).colors)
+  const built = buildPalette(theme.encodings.color)
+  const swatches = lineSwatches(theme.surface, built.colors)
+  const staffSwatches = lineSwatches(theme.surface, built.colors, true)
+  // The miniature has to resolve '@note' the same way the score does, or the
+  // preview and the page disagree about what "match" means.
+  const staffNoteColors = STAFF_LINE_MIDI.map((midi) =>
+    colorForPitch(built, midi, keyAt(score, 0)),
+  )
 
   // Only the lines this notation actually draws, so the editor never offers a
   // control with nothing behind it. The staff's own lines are edited through
@@ -1154,6 +1176,7 @@ function StaffTab() {
           staff={layout.staff}
           base={base}
           surface={theme.surface}
+          noteColors={staffNoteColors}
           selected={selected}
           onSelect={setSelected}
         />
@@ -1172,7 +1195,7 @@ function StaffTab() {
           <>
             <Swatches
               value={base.color}
-              options={swatches}
+              options={staffSwatches}
               onChange={(color) => patchLine('staff', { color })}
             />
             <Pills
@@ -1206,7 +1229,7 @@ function StaffTab() {
         <StaffItemEditor
           staff={layout.staff}
           base={base}
-          swatches={swatches}
+          swatches={staffSwatches}
           selected={selected}
           onChange={(staff) => patchLayout({ staff })}
         />

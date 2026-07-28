@@ -289,7 +289,13 @@ export function Swatches({
       {options.map((o) => (
         <button
           key={o.value}
-          className={o.value === '@auto' ? 'swatch swatch--auto' : 'swatch'}
+          className={
+            o.value === '@auto'
+              ? 'swatch swatch--auto'
+              : o.value === '@note'
+                ? 'swatch swatch--note'
+                : 'swatch'
+          }
           style={{ background: o.color }}
           aria-pressed={value === o.value}
           aria-label={o.label}

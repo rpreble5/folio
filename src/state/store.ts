@@ -42,6 +42,13 @@ function fillGaps(theme: Theme): Theme {
       // object, so it replaces the defaults rather than merging with them and
       // arrives missing whichever axes were added since.
       color: { ...base.encodings.color, ...theme.encodings?.color },
+      // labelTint used to carry its direction in its sign. A stored negative
+      // means "darker", so it becomes a magnitude and an explicit direction —
+      // flipping the number alone would have quietly inverted saved styles.
+      labelTint: Math.abs(theme.encodings?.labelTint ?? base.encodings.labelTint),
+      labelTintDir:
+        theme.encodings?.labelTintDir ??
+        ((theme.encodings?.labelTint ?? 0) < 0 ? 'darker' : base.encodings.labelTintDir),
       trail: { ...base.encodings.trail, ...theme.encodings?.trail },
       texture: { ...base.encodings.texture, ...theme.encodings?.texture },
     },
