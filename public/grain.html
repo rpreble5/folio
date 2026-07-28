@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Folio — grain study</title>
+    <style>
+      :root {
+        --ground: #15171b;
+        --surface: #1c1f24;
+        --line: #282c33;
+        --ink: #eceef1;
+        --ink-2: #99a0a9;
+        --ink-3: #676d76;
+        --bone: #ece6da;
+        --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+        --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font-family: var(--font);
+        font-size: 13px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 40px 90px; }
+      header { margin-bottom: 44px; }
+      h1 {
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+        margin: 0 0 10px;
+      }
+      header p { color: var(--ink-2); max-width: 62ch; margin: 0 0 6px; }
+      header .caveat { color: var(--ink-3); font-size: 12px; max-width: 62ch; }
+
+      .toggle {
+        display: inline-flex;
+        gap: 2px;
+        margin-top: 22px;
+        padding: 3px;
+        background: var(--surface);
+        border-radius: 999px;
+      }
+      .toggle button {
+        font: inherit;
+        font-size: 12px;
+        color: var(--ink-3);
+        background: none;
+        border: none;
+        padding: 6px 16px;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 180ms, color 180ms;
+      }
+      .toggle button[aria-pressed='true'] { background: #2b2f36; color: var(--ink); }
+
+      .row {
+        display: grid;
+        grid-template-columns: 232px minmax(0, 1fr);
+        gap: 34px;
+        padding: 26px 0;
+        border-top: 1px solid var(--line);
+        align-items: start;
+      }
+      .row h2 {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0 0 6px;
+        letter-spacing: 0.005em;
+      }
+      .row .what { color: var(--ink-2); font-size: 12px; margin: 0 0 9px; }
+      .row .cost { color: var(--ink-3); font-size: 11.5px; margin: 0; }
+      .row .tag {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.04em;
+        color: var(--ink-3);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 1px 6px;
+        margin-bottom: 9px;
+      }
+      svg.plate { display: block; width: 100%; height: auto; border-radius: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Grain, seven ways</h1>
+        <p>
+          The same phrase under each treatment, so the grain is judged in context rather than as a
+          swatch. Look at it at full size on your own screen — grain is the one thing a scaled
+          screenshot cannot tell you the truth about.
+        </p>
+        <p class="caveat">
+          These are hand-built plates, not the app rendering. The notes, colours and page are the
+          real ones; only the grain differs between rows.
+        </p>
+        <div class="toggle" role="group" aria-label="Page colour">
+          <button data-page="dark" aria-pressed="true">Dark page</button>
+          <button data-page="paper" aria-pressed="false">Paper page</button>
+        </div>
+      </header>
+      <main id="rows"></main>
+    </div>
+
+    <script>
+      const PALETTE = ['#ff8a82', '#dca81c', '#6eca73', '#f99549', '#fa86b6', '#7cc4f0']
+      const PAGES = { dark: '#1b1e23', paper: '#f5f7fb' }
+      const GRID = { dark: '#23262c', paper: '#e4e8f0' }
+
+      // A phrase with a bit of everything: repeated pitches, a leap, long notes
+      // and short ones, so grain can be judged over large areas and small.
+      const PHRASE = [
+        [0, 2, 2], [2, 2, 2], [4, 3, 3], [7, 3, 3],
+        [10, 4, 1], [14, 2, 4], [16, 4, 5], [20, 4, 0],
+        [24, 2, 2], [26, 2, 3], [28, 6, 1],
+      ]
+
+      const W = 940
+      const H = 190
+      const LANE = 22
+      const PPB = 26
+      const LEFT = 16
+
+      /** Head plus tapering trail as one path — the app's own note silhouette. */
+      function notePath(x, y, len, h) {
+        const r = h / 2
+        const x1 = x + Math.max(h, len)
+        const t = Math.max(1.6, h * 0.2)
+        return [
+          `M ${x + r} ${y}`,
+          `A ${r} ${r} 0 0 0 ${x + r} ${y + h}`,
+          `C ${x + r + 10} ${y + h} ${x1 - 18} ${y + h / 2 + t} ${x1} ${y + h / 2 + t}`,
+          `L ${x1} ${y + h / 2 - t}`,
+          `C ${x1 - 18} ${y + h / 2 - t} ${x + r + 10} ${y} ${x + r} ${y}`,
+          'Z',
+        ].join(' ')
+      }
+
+      function plate(page, defs, pageFilter, noteFilter, overlay) {
+        const bg = PAGES[page]
+        const grid = GRID[page]
+        const notes = PHRASE.map(([b, d, p]) => {
+          const y = 26 + (5 - p) * LANE
+          return `<path d="${notePath(LEFT + b * PPB, y, d * PPB, LANE * 0.72)}" fill="${PALETTE[p]}"/>`
+        }).join('')
+        const lines = [0, 1, 2, 3, 4, 5, 6]
+          .map((i) => `<line x1="0" x2="${W}" y1="${26 + i * LANE + 8}" y2="${26 + i * LANE + 8}" stroke="${grid}" stroke-width="1"/>`)
+          .join('')
+        const bars = [0, 8, 16, 24, 32]
+          .map((b) => `<line x1="${LEFT + b * PPB}" x2="${LEFT + b * PPB}" y1="10" y2="${H - 10}" stroke="${grid}" stroke-width="1.4"/>`)
+          .join('')
+        return `<svg class="plate" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+          <defs>${defs}</defs>
+          <rect width="${W}" height="${H}" fill="${bg}" ${pageFilter}/>
+          ${lines}${bars}
+          <g ${noteFilter}>${notes}</g>
+          ${overlay}
+        </svg>`
+      }
+
+      /**
+       * Grain as a *neutral* layer, not an additive one.
+       *
+       * The version in the app paints one ink over the page, so every speck can
+       * only lighten (or only darken) and turning the strength up shifts the
+       * page colour with it. Measured: the current grain lifts the page's mean
+       * luminance by 8 of 255 — the page is visibly no longer the colour that
+       * was chosen for it.
+       *
+       * Centring the noise on mid-grey and compositing with soft-light or
+       * overlay fixes that at the root. Mid-grey is the identity for both blend
+       * modes, so values above it lighten, values below darken, and the mean
+       * comes out where it started. Strength then adds texture without ever
+       * touching the page colour, which is what makes it safe to turn up.
+       */
+      function grainFilter(id, body) {
+        return `<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+          ${body}
+          <feColorMatrix in="shaped" type="matrix"
+            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0 1"/>
+        </filter>`
+      }
+
+      function overlayPlate(page, id, body, blend, strength) {
+        return plate(page, grainFilter(id, body), '', '',
+          `<rect width="${W}" height="${H}" filter="url(#${id})" style="mix-blend-mode:${blend}" opacity="${strength}"/>`)
+      }
+
+      /** Turbulence driving the note outlines rather than sitting on top of them. */
+      function roughFilter(id, scale) {
+        return `<filter id="${id}" x="-8%" y="-30%" width="116%" height="160%" color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="9" result="n"/>
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="${scale}" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>`
+      }
+
+      const ROWS = [
+        {
+          name: 'No grain',
+          tag: 'baseline',
+          what: 'The plate untouched, for reference.',
+          cost: '',
+          build: (page) => plate(page, '', '', '', ''),
+        },
+        {
+          name: 'Today — tiled specks',
+          tag: '<pattern> 8×8',
+          what: 'Ten identical squares in an eight-unit tile, repeated.',
+          cost: 'Two faults at once. The period: at reading size you see the same constellation stamped in a grid. And it only ever lightens, so turning it up washes the page out.',
+          build: (page) => {
+            const ink = page === 'dark' ? '#ffffff' : '#000000'
+            const pts = [[1.2,2.1],[3.4,0.8],[5.9,3.2],[2.2,5.4],[6.8,6.1],[0.6,6.8],[4.6,4.4],[7.2,1.4],[3.1,7.3],[5.2,0.3]]
+            const defs = `<pattern id="p-old-${page}" width="8" height="8" patternUnits="userSpaceOnUse">
+              ${pts.map(([x, y]) => `<rect x="${x}" y="${y}" width="0.9" height="0.9" fill="${ink}"/>`).join('')}
+            </pattern>`
+            return plate(page, defs, '', '', `<rect width="${W}" height="${H}" fill="url(#p-old-${page})" opacity="0.3"/>`)
+          },
+        },
+        {
+          name: 'Fractal noise',
+          tag: 'feTurbulence',
+          what: 'Continuous band-limited noise, blended two-sided. No tile, so no period, and coverage is a smooth gradient rather than on-or-off.',
+          cost: 'Reads as haze or cloud rather than particles. Good as a wash; not what most people mean by grain.',
+          build: (page) =>
+            overlayPlate(page, `c-${page}`,
+              `<feTurbulence type="fractalNoise" baseFrequency="0.4" numOctaves="4" seed="11" result="n"/>
+               <feColorMatrix in="n" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="shaped"/>`,
+              'soft-light', 1),
+        },
+        {
+          name: 'Thresholded noise',
+          tag: 'feTurbulence + table',
+          what: 'The same noise pushed through a steep transfer so it breaks into particles — light specks where it peaks, dark where it troughs, neutral in between.',
+          cost: 'Base frequency is speck size, table width is density. Because it is thresholded band-limited noise, the size distribution comes free: many small, a few large.',
+          build: (page) =>
+            overlayPlate(page, `s-${page}`,
+              `<feTurbulence type="fractalNoise" baseFrequency="0.5" numOctaves="2" seed="5" result="n"/>
+               <feColorMatrix in="n" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="m"/>
+               <feComponentTransfer in="m" result="shaped">
+                 <feFuncR type="linear" slope="5.5" intercept="-2.25"/>
+                 <feFuncG type="linear" slope="5.5" intercept="-2.25"/>
+                 <feFuncB type="linear" slope="5.5" intercept="-2.25"/>
+               </feComponentTransfer>`,
+              'overlay', 0.5),
+        },
+        {
+          name: 'Paper',
+          tag: 'two frequencies',
+          what: 'Fibre at high frequency plus formation — the cloudy mottle you see holding a sheet up to the light — three octaves below it.',
+          cost: 'This is the change that makes a paper texture read as paper instead of as noise. One extra turbulence pass.',
+          build: (page) =>
+            overlayPlate(page, `pa-${page}`,
+              `<feTurbulence type="fractalNoise" baseFrequency="0.62" numOctaves="1" seed="2" result="fib"/>
+               <feTurbulence type="fractalNoise" baseFrequency="0.055" numOctaves="3" seed="8" result="form"/>
+               <feColorMatrix in="fib" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="fibm"/>
+               <feColorMatrix in="form" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="formm"/>
+               <feComposite in="fibm" in2="formm" operator="arithmetic" k1="0" k2="1.45" k3="0.75" k4="-0.6" result="shaped"/>`,
+              'soft-light', 1),
+        },
+        {
+          name: 'Laid / linen',
+          tag: 'anisotropic',
+          what: 'The same generator with different frequencies in x and y, which streaks it directionally.',
+          cost: 'Nearly free, and a texture family we do not have at all — the ratio takes you from laid paper through linen to brushed metal.',
+          build: (page) =>
+            overlayPlate(page, `l-${page}`,
+              `<feTurbulence type="fractalNoise" baseFrequency="0.014 0.9" numOctaves="2" seed="4" result="n"/>
+               <feColorMatrix in="n" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="shaped"/>`,
+              'soft-light', 1),
+        },
+        {
+          name: 'Displaced edges',
+          tag: 'feDisplacementMap',
+          what: 'Not an overlay at all. Noise perturbs the outline of each note, the way ink behaves on absorbent paper.',
+          cost: 'Nothing is added on top, so nothing competes with the colour — the notes simply stop looking machine-drawn. Scale is the only knob.',
+          build: (page) => plate(page, roughFilter(`r-${page}`, 2.2), '', `filter="url(#r-${page})"`, ''),
+        },
+        {
+          name: 'Displaced + paper',
+          tag: 'combined',
+          what: 'The edge treatment under the paper grain — the two doing different jobs rather than the same one twice.',
+          cost: 'My guess at where this lands. Yours is the one that counts.',
+          build: (page) => {
+            const gid = `pa2-${page}`
+            const defs =
+              roughFilter(`r2-${page}`, 2.2) +
+              grainFilter(gid,
+                `<feTurbulence type="fractalNoise" baseFrequency="0.62" numOctaves="1" seed="2" result="fib"/>
+                 <feTurbulence type="fractalNoise" baseFrequency="0.055" numOctaves="3" seed="8" result="form"/>
+                 <feColorMatrix in="fib" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="fibm"/>
+                 <feColorMatrix in="form" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="formm"/>
+                 <feComposite in="fibm" in2="formm" operator="arithmetic" k1="0" k2="1.45" k3="0.75" k4="-0.6" result="shaped"/>`)
+            return plate(page, defs, '', `filter="url(#r2-${page})"`,
+              `<rect width="${W}" height="${H}" filter="url(#${gid})" style="mix-blend-mode:soft-light" opacity="1"/>`)
+          },
+        },
+      ]
+
+      let page = 'dark'
+      const rows = document.getElementById('rows')
+
+      function render() {
+        rows.innerHTML = ROWS.map(
+          (r) => `<section class="row">
+            <div>
+              <span class="tag">${r.tag}</span>
+              <h2>${r.name}</h2>
+              <p class="what">${r.what}</p>
+              ${r.cost ? `<p class="cost">${r.cost}</p>` : ''}
+            </div>
+            <div>${r.build(page)}</div>
+          </section>`,
+        ).join('')
+      }
+
+      document.querySelectorAll('.toggle button').forEach((b) => {
+        b.addEventListener('click', () => {
+          page = b.dataset.page
+          document.querySelectorAll('.toggle button').forEach((o) => {
+            o.setAttribute('aria-pressed', String(o.dataset.page === page))
+          })
+          render()
+        })
+      })
+
+      render()
+    </script>
+  </body>
+</html>
