@@ -25,6 +25,7 @@ import {
   toneSample,
 } from '../core/palettes'
 import { oklch } from '../core/oklch'
+import { contrastRatio } from '../core/theme'
 
 const SIZE = 248
 const C = SIZE / 2
@@ -230,7 +231,11 @@ export function HueWheel({ config, colors, names, surface, onShift, onRotate }: 
               cy={hy}
               r={active ? HANDLE_R + 2.5 : HANDLE_R}
               fill={colors[pc]}
-              stroke={surface.background}
+              // Normally the page colour, which reads as a gap around the
+              // handle. An achromatic anchor can *be* near the page colour,
+              // though, so a black one on a dark page would vanish outline and
+              // all — those get the panel's ink instead.
+              stroke={contrastRatio(colors[pc], surface.background) < 1.5 ? '#676d76' : surface.background}
               strokeWidth={2.5}
               tabIndex={0}
               role="slider"

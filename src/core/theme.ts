@@ -9,11 +9,12 @@
 
 import type { Hand, KeyMark, NoteEvent } from './types'
 import { degreeLabel, noteName, octaveOf, pitchClass, scaleDegree, solfege } from './pitch'
-import { lightnessOf, shiftLightness, withLightness } from './oklch'
+import { lightnessOf, scaleChroma, shiftLightness, withLightness } from './oklch'
 import {
   type ColorConfig,
   type ShapeKind,
   buildPalette,
+  chromaScale,
   colorFor,
   getShapeSet,
   isNatural,
@@ -601,9 +602,15 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
 
   const rawFill = colorFor(palette, note, key)
   const baseFill = rawFill === '@ink' ? theme.surface.text : rawFill
-  // Brightness is applied after the hue is chosen, so it composes with any
-  // colour source rather than needing to be baked into each palette.
-  const fill = shiftLightness(baseFill, lightnessDelta(theme.encodings.color, note))
+  // Brightness and saturation are applied after the hue is chosen, so they
+  // compose with any colour source rather than being baked into each palette.
+  // Chroma second: scaling it holds lightness, so the order does not matter to
+  // the result, but doing brightness first keeps a greyed note at the lightness
+  // the brightness channel asked for.
+  const fill = scaleChroma(
+    shiftLightness(baseFill, lightnessDelta(theme.encodings.color, note)),
+    chromaScale(theme.encodings.color, note, key),
+  )
   const outlined = shouldOutline(note, theme, key)
 
   const base: ResolvedStyle = {

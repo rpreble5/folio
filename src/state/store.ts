@@ -35,7 +35,16 @@ function fillGaps(theme: Theme): Theme {
         spaces: { ...theme.layout?.staff?.spaces },
       },
     },
-    encodings: { ...base.encodings, ...theme.encodings },
+    encodings: {
+      ...base.encodings,
+      ...theme.encodings,
+      // Same one-level-deep problem: a saved theme's colour config is a whole
+      // object, so it replaces the defaults rather than merging with them and
+      // arrives missing whichever axes were added since.
+      color: { ...base.encodings.color, ...theme.encodings?.color },
+      trail: { ...base.encodings.trail, ...theme.encodings?.trail },
+      texture: { ...base.encodings.texture, ...theme.encodings?.texture },
+    },
     surface: { ...base.surface, ...theme.surface },
     rules: theme.rules ?? [],
   }
@@ -62,7 +71,14 @@ function persistCustomThemes(themes: Theme[]): void {
 }
 
 export type Screen = 'library' | 'score'
-export type StudioTab = 'styles' | 'colour' | 'marks' | 'page'
+export type StudioTab =
+  | 'styles'
+  | 'colour'
+  | 'emphasis'
+  | 'marks'
+  | 'labels'
+  | 'staff'
+  | 'page'
 
 interface State {
   screen: Screen

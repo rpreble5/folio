@@ -116,7 +116,7 @@ button {
 
 .app {
   display: grid;
-  grid-template-rows: auto minmax(0, 60fr) minmax(0, 40fr) auto;
+  grid-template-rows: auto minmax(0, 57fr) minmax(0, 43fr) auto;
   height: 100%;
   overflow: hidden;
   transition: grid-template-rows var(--dur) var(--ease);
@@ -127,6 +127,50 @@ button {
    the whole point of adjusting them. */
 .app--lab {
   grid-template-rows: auto minmax(0, 44fr) minmax(0, 56fr) auto;
+}
+
+/*
+ * The split has to answer to absolute height, not just to proportion.
+ *
+ * A share of the screen is the wrong unit for the panel: its contents are a
+ * fixed number of pixels tall, so on a shorter laptop the same 43% is simply
+ * too few of them and every tab scrolls. The score is a document and scrolls
+ * happily; the panel is a set of controls, and a control below the fold may as
+ * well not exist. So the panel's share grows as the screen shrinks.
+ *
+ * Fixed shares rather than sizing to content, because a panel that resized per
+ * tab would move the score every time you switched — and the score staying put
+ * while you work on it is the point of putting it above.
+ */
+@media (max-height: 1000px) {
+  .app {
+    grid-template-rows: auto minmax(0, 48fr) minmax(0, 52fr) auto;
+  }
+  .app--lab {
+    grid-template-rows: auto minmax(0, 38fr) minmax(0, 62fr) auto;
+  }
+}
+
+@media (max-height: 860px) {
+  .app {
+    grid-template-rows: auto minmax(0, 40fr) minmax(0, 60fr) auto;
+  }
+  .app--lab {
+    grid-template-rows: auto minmax(0, 32fr) minmax(0, 68fr) auto;
+  }
+}
+
+/* Below about 800px the two cannot both be satisfied — the panel is given as
+   much as it can take while leaving the score a system to show, and the densest
+   two tabs scroll a little. Crushing the score to nothing to avoid that would
+   cost more than it saves. */
+@media (max-height: 800px) {
+  .app {
+    grid-template-rows: auto minmax(0, 36fr) minmax(0, 64fr) auto;
+  }
+  .app--lab {
+    grid-template-rows: auto minmax(0, 30fr) minmax(0, 70fr) auto;
+  }
 }
 
 .topbar {
@@ -264,7 +308,7 @@ button {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 22px var(--gap-lg) 26px;
+  padding: 18px var(--gap-lg) 20px;
   animation: panel-in var(--dur) var(--ease);
 }
 
@@ -289,6 +333,19 @@ button {
 
 .columns--2 {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+}
+
+/* The preset tiles need room for two across, or they stack one per row and the
+   column runs to six. The three groups beside them are short lists. */
+.columns--styles {
+  grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr));
+  gap: var(--gap-lg);
+}
+
+@media (max-width: 1320px) {
+  .columns--styles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ------------------------------------------------------------ colour lab -- */
@@ -338,6 +395,27 @@ button {
   border-radius: 4px;
   flex-shrink: 0;
   display: block;
+}
+
+/* The swatch is the control for dropping a note out of colour, so it has to
+   look pressable without becoming a button-shaped thing in a list of colours.
+   A ring on hover, and nothing at rest. */
+.note-row__swatch {
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  display: block;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 0 0 0 var(--ink-3);
+  transition: box-shadow var(--dur-fast) var(--ease);
+}
+
+.note-row__swatch:hover,
+.note-row__swatch:focus-visible {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink-2);
+  outline: none;
 }
 
 /* The accidental's shade, shown only when it differs from its natural. */
@@ -707,6 +785,16 @@ button {
   height: auto;
 }
 
+/* The wheel is the one fixed-size object in the panel, so on a short screen it
+   is what pushes Colour past the fold. Scaling the whole SVG keeps every hit
+   target proportionate — shrinking it in code would need each radius retuned. */
+@media (max-height: 940px) {
+  .wheel {
+    width: 208px;
+    height: 208px;
+  }
+}
+
 .wheel__ring {
   /* The spin. Eased so a rotation reads as the spectrum turning under the
      notes rather than as an instant recolour. */
@@ -760,7 +848,10 @@ button {
 /* Preset tiles are the front door, so they get more presence — but not so much
    height that the rest of the tab has to scroll to reach it. */
 .preset-tile {
-  width: 148px;
+  /* Sized so three fit across the Styles column rather than two. At 148px the
+     six presets took three rows and made Styles the tallest tab; at 140 they
+     take two. */
+  width: 140px;
   gap: 9px;
   padding: 11px;
 }

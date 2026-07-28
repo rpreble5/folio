@@ -110,7 +110,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       // roll, so they need the *most* colour distance, not the least.
       color: { source: 'pitch', order: 'fifths', tone: 'bright', rotate: 0,
         basis: 'pitchClass', accidentalShade: 'same',
-        lightnessBy: 'none', lightnessSpread: 0.14 },
+        lightnessBy: 'none', lightnessSpread: 0.14,
+        saturation: 1, chromaBy: 'none', chromaSpread: 0.7 },
       shapeSet: 'capsule',
       label: 'none',
       labelScale: 1,
@@ -142,7 +143,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
     encodings: {
       color: { source: 'classroom', order: 'chromatic', tone: 'bright', rotate: 0,
         basis: 'pitchClass', accidentalShade: 'same',
-        lightnessBy: 'none', lightnessSpread: 0.14 },
+        lightnessBy: 'none', lightnessSpread: 0.14,
+        saturation: 1, chromaBy: 'none', chromaSpread: 0.7 },
       shapeSet: 'circle',
       label: 'letter',
       labelScale: 1,
@@ -175,7 +177,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
     encodings: {
       color: { source: 'harmony', order: 'fifths', tone: 'bright', rotate: 0,
         basis: 'pitchClass', accidentalShade: 'same',
-        lightnessBy: 'none', lightnessSpread: 0.14 },
+        lightnessBy: 'none', lightnessSpread: 0.14,
+        saturation: 1, chromaBy: 'none', chromaSpread: 0.7 },
       shapeSet: 'degree',
       label: 'degree',
       labelScale: 0.95,
@@ -208,7 +211,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
     encodings: {
       color: { source: 'hands', order: 'fifths', tone: 'bright', rotate: 0,
         basis: 'pitchClass', accidentalShade: 'same',
-        lightnessBy: 'none', lightnessSpread: 0.14 },
+        lightnessBy: 'none', lightnessSpread: 0.14,
+        saturation: 1, chromaBy: 'none', chromaSpread: 0.7 },
       shapeSet: 'hand',
       label: 'none',
       labelScale: 1,
@@ -247,7 +251,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
     encodings: {
       color: { source: 'ink', order: 'fifths', tone: 'bright', rotate: 0,
         basis: 'pitchClass', accidentalShade: 'same',
-        lightnessBy: 'none', lightnessSpread: 0.14 },
+        lightnessBy: 'none', lightnessSpread: 0.14,
+        saturation: 1, chromaBy: 'none', chromaSpread: 0.7 },
       shapeSet: 'duration',
       label: 'none',
       labelScale: 1,
@@ -292,7 +297,8 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       // on shape and fill instead, which this preset already provides.
       color: { source: 'pitch', order: 'chromatic', tone: 'deep', rotate: 0,
         basis: 'letter', accidentalShade: 'darker',
-        lightnessBy: 'none', lightnessSpread: 0.14 },
+        lightnessBy: 'none', lightnessSpread: 0.14,
+        saturation: 1, chromaBy: 'none', chromaSpread: 0.7 },
       shapeSet: 'accidental',
       label: 'none',
       labelScale: 1,

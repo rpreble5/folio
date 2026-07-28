@@ -11,7 +11,7 @@
  */
 
 import { useMemo, useState } from 'react'
-import { useStore } from '../state/store'
+import { useStore, type StudioTab } from '../state/store'
 import { PAGES, PRESETS, TRAIL_PRESETS } from '../core/presets'
 import { NoteGlyph } from '../render/NoteGlyph'
 import { cyclesAcross } from '../render/textures'
@@ -21,12 +21,14 @@ import {
   SHAPE_SETS,
   TONES,
   ACCIDENTAL_SHADES,
+  CHROMA_SOURCES,
   LIGHTNESS_SOURCES,
   buildPalette,
   hasHueShift,
   noteHue,
   slotCount,
   slotNames,
+  type Achromatic,
   type ColorConfig,
 } from '../core/palettes'
 import { HueWheel } from './HueWheel'
@@ -40,6 +42,7 @@ import {
   NO_TEXTURE,
   OUTLINE_TARGETS,
   TEXTURE_KINDS,
+  contrastRatio,
   describeSelector,
   makeSurface,
   worstLabelContrast,
@@ -56,14 +59,28 @@ import { keyAt } from '../core/types'
 import { CVD_MODES, type CvdMode } from '../render/cvd'
 import { Field, Group, Pills, ShapeMark, Slider, Switch, Tile } from './controls'
 
-type Tab = 'styles' | 'colour' | 'marks' | 'page'
+type Tab = StudioTab
 
-// Colour started inside Marks and outgrew it once order, tone and rotation
-// became separate axes. Four tabs, each still one concern.
+/**
+ * Seven tabs, which is more than the three this started with and deliberately so.
+ *
+ * The panel is a fixed strip under the score — wide and only a few hundred
+ * pixels tall — so a tab that outgrows it does not get taller, it gets a
+ * scrollbar, and a control that has to be scrolled to is a control nobody
+ * finds. Labels alone had grown to three times the panel's height. Splitting
+ * costs a click; scrolling costs the discovery.
+ *
+ * The split is by *question*, not by object: Emphasis is everything that
+ * decides which notes come forward and which recede, whichever visual property
+ * does it.
+ */
 const TABS: { id: Tab; label: string }[] = [
   { id: 'styles', label: 'Styles' },
   { id: 'colour', label: 'Colour' },
+  { id: 'emphasis', label: 'Emphasis' },
   { id: 'marks', label: 'Marks' },
+  { id: 'labels', label: 'Labels' },
+  { id: 'staff', label: 'Staff' },
   { id: 'page', label: 'Page' },
 ]
 
@@ -109,7 +126,10 @@ export function StudioPanel() {
       <div className="panel__body" role="tabpanel" key={tab}>
         {tab === 'styles' && <StylesTab />}
         {tab === 'colour' && <ColourTab />}
+        {tab === 'emphasis' && <EmphasisTab />}
         {tab === 'marks' && <MarksTab />}
+        {tab === 'labels' && <LabelsTab />}
+        {tab === 'staff' && <StaffTab />}
         {tab === 'page' && <PageTab />}
       </div>
     </section>
@@ -139,7 +159,10 @@ function StylesTab() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+    <div className="columns columns--styles">
+      {/* Four columns rather a preset row above a group row: stacking made
+          Styles the one tab whose height was the sum of two things instead of
+          the tallest of several, which is what pushed it past the panel. */}
       <Group label="Start from">
         <div className="tiles">
           {PRESETS.map((preset) => {
@@ -161,8 +184,7 @@ function StylesTab() {
         </div>
       </Group>
 
-      <div className="columns columns--3">
-        <Group label="Check your colours">
+      <Group label="Check your colours">
           <Pills
             options={CVD_MODES.map((m) => ({ value: m.id, label: m.label }))}
             value={cvd}
@@ -249,11 +271,10 @@ function StylesTab() {
               onKeyDown={(e) => e.key === 'Enter' && save()}
             />
           </Field>
-          <button className="pill pill--solid" disabled={!name.trim()} onClick={save}>
-            Save
-          </button>
-        </Group>
-      </div>
+        <button className="pill pill--solid" disabled={!name.trim()} onClick={save}>
+          Save
+        </button>
+      </Group>
     </div>
   )
 }
@@ -283,6 +304,32 @@ function ColourTab() {
     )
     patchColor({ hueShift: next })
   }
+
+  // Cycled from the swatch rather than picked from a menu. Twelve slots times
+  // three states is thirty-six controls laid out as a list, and one click on
+  // the colour you are looking at is both smaller and more direct.
+  const NEXT_ANCHOR: Record<Achromatic, Achromatic> = {
+    none: 'light',
+    light: 'dark',
+    dark: 'none',
+  }
+  const cycleAnchor = (slot: number) => {
+    const next = Array.from({ length: slotCount(color.basis) }, (_, i) =>
+      i === slot ? NEXT_ANCHOR[color.achromatic?.[i] ?? 'none'] : color.achromatic?.[i] ?? 'none',
+    )
+    patchColor({ achromatic: next.every((a) => a === 'none') ? undefined : next })
+  }
+  const anchorCount = (color.achromatic ?? []).filter((a) => a !== 'none').length
+  // An anchor is only an anchor if it can be seen. Black on a dark page is the
+  // obvious trap, and it is invisible in the score while looking fine in this
+  // list, where the panel is a different colour from the page.
+  const lostAnchors = names
+    .map((name, i) => ({ name, kind: color.achromatic?.[i] ?? 'none' }))
+    .filter(
+      (a) =>
+        a.kind !== 'none' &&
+        contrastRatio(palette.colors[names.indexOf(a.name)], theme.surface.background) < 1.6,
+    )
 
   return (
     <div className="colour-lab">
@@ -355,35 +402,22 @@ function ColourTab() {
                 />
               </Field>
 
-        {/* Hue and brightness are not read the same way: colours differing in
-            hue but not brightness resolve slowly, because the fast achromatic
-            part of vision cannot see the difference. A palette with perfectly
-            even lightness looks immaculate and gives that channel nothing. */}
-        <Field name="Brightness follows">
-          <Pills
-            options={LIGHTNESS_SOURCES.map((l) => ({ value: l.id, label: l.label }))}
-            value={color.lightnessBy}
-            onChange={(lightnessBy) => patchColor({ lightnessBy })}
-          />
-        </Field>
-
-        {color.lightnessBy !== 'none' && (
-          <Field
-            name="Brightness spread"
-            value={`${Math.round(color.lightnessSpread * 100)}%`}
-          >
+        {/* Two things that apply to the whole palette at once, so they read as
+            a pair. Saturation is the chroma axis pulled back out of `tone`,
+            which bundles it with lightness into six named points — wanting
+            Bright-but-calmer should not mean hunting for a nearby preset. */}
+        <div className="slider-pair">
+          <Field name="Saturation" value={`${Math.round(color.saturation * 100)}%`}>
             <Slider
-              label="Brightness spread"
-              min={0.04}
-              max={0.34}
-              step={0.02}
-              value={color.lightnessSpread}
-              onChange={(lightnessSpread) => patchColor({ lightnessSpread })}
+              label="Saturation"
+              min={0}
+              max={1.8}
+              step={0.05}
+              value={color.saturation}
+              onChange={(saturation) => patchColor({ saturation })}
             />
           </Field>
-        )}
-
-        <Field name="Rotate all" value={`${color.rotate}°`}>
+          <Field name="Rotate all" value={`${color.rotate}°`}>
             <Slider
               label="Rotate hue"
               min={0}
@@ -393,6 +427,7 @@ function ColourTab() {
               onChange={(rotate) => patchColor({ rotate })}
             />
           </Field>
+        </div>
         </Group>
       )}
 
@@ -416,9 +451,21 @@ function ColourTab() {
             <div className="note-rows">
               {names.map((name, slot) => {
                 const shift = Math.round(color.hueShift?.[slot] ?? 0)
+                const anchor = color.achromatic?.[slot] ?? 'none'
                 return (
                   <div className="note-row" key={name}>
-                    <i style={{ background: palette.colors[slot] }} />
+                    <button
+                      className="note-row__swatch"
+                      style={{ background: palette.colors[slot] }}
+                      title={
+                        anchor === 'none'
+                          ? `${name} takes a hue — click for white`
+                          : anchor === 'light'
+                            ? `${name} is white — click for black`
+                            : `${name} is black — click to give it a hue back`
+                      }
+                      onClick={() => cycleAnchor(slot)}
+                    />
                     {color.basis === 'letter' && palette.altColors && (
                       <i
                         className="note-row__alt"
@@ -427,7 +474,9 @@ function ColourTab() {
                       />
                     )}
                     <span className="note-row__name">{name}</span>
-                    <span className="note-row__hue">{Math.round(noteHue(color, slot))}°</span>
+                    <span className="note-row__hue">
+                      {anchor === 'none' ? `${Math.round(noteHue(color, slot))}°` : anchor === 'light' ? 'white' : 'black'}
+                    </span>
                     <button
                       className="note-row__reset"
                       disabled={shift === 0}
@@ -440,12 +489,25 @@ function ColourTab() {
                 )
               })}
             </div>
-            {hasHueShift(color) && (
+            {/* Twelve hues is more than anyone reliably tells apart at a
+                glance, and an achromatic note is the one mark that survives
+                every kind of colour blindness intact. Click a swatch to make
+                that pitch white or black — it leaves the hue problem entirely
+                and becomes a landmark in the middle of the colour. */}
+            <p className={`note-text${lostAnchors.length ? ' warn' : ''}`}>
+              {lostAnchors.length
+                ? `${lostAnchors.map((a) => a.name).join(', ')} ${lostAnchors.length === 1 ? 'is' : 'are'} nearly the page's own colour — click again for the other one.`
+                : anchorCount === 0
+                  ? 'Click a swatch to drop that note out of colour — white, then black.'
+                  : `${anchorCount} anchored. An achromatic note is the one mark that survives every kind of colour blindness.`}
+            </p>
+            {(hasHueShift(color) || anchorCount > 0) && (
               <button
                 className="pill pill--solid"
-                onClick={() => patchColor({ hueShift: undefined })}
+                onClick={() => patchColor({ hueShift: undefined, achromatic: undefined })}
               >
-                Reset all {countShifted(color)}
+                Reset {countShifted(color) + anchorCount} change
+                {countShifted(color) + anchorCount === 1 ? '' : 's'}
               </button>
             )}
           </div>
@@ -466,7 +528,6 @@ function ColourTab() {
 
 function MarksTab() {
   const theme = useStore((s) => s.theme)
-  const score = useStore((s) => s.score)
   const layout = useStore((s) => s.theme.layout)
   const patchEncodings = useStore((s) => s.patchEncodings)
   const { shapeSet: shapeSetId, trail, texture } = theme.encodings
@@ -483,13 +544,8 @@ function MarksTab() {
   const cycles = cyclesAcross(texture, noteHeight)
   const tooFine = texture.kind !== 'none' && cycles < 2.2
 
-  const worstLabel = useMemo(
-    () => (score ? worstLabelContrast(score.notes, theme, (n) => keyAt(score, n.onset)) : null),
-    [score, theme],
-  )
-
   return (
-    <div className="columns columns--4">
+    <div className="columns columns--3">
       <Group label="Shape">
         <div className="tiles">
           {SHAPE_SETS.map((set) => (
@@ -573,27 +629,7 @@ function MarksTab() {
         </div>
       </Group>
 
-      <Group label="Fill & texture">
-        <Field name="Draw hollow">
-          <Pills
-            options={OUTLINE_TARGETS.map((t) => ({ value: t.id, label: t.label }))}
-            value={theme.encodings.outlineWhat}
-            onChange={(outlineWhat: OutlineWhat) => patchEncodings({ outlineWhat })}
-          />
-        </Field>
-        {theme.encodings.outlineWhat !== 'none' && (
-          <Field name="Hollow style">
-            <Pills
-              options={[
-                { value: 'hollow', label: 'Outline' },
-                { value: 'tinted', label: 'Tinted' },
-              ]}
-              value={theme.encodings.outlineStyle}
-              onChange={(outlineStyle) => patchEncodings({ outlineStyle })}
-            />
-          </Field>
-        )}
-
+      <Group label="Texture">
         <Field name="Texture">
           <Pills
             options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}
@@ -650,159 +686,10 @@ function MarksTab() {
         )}
       </Group>
 
-      {/* Labels are the way *off* labels as much as onto them: fade them and
-          narrow which notes carry one as the colours take over. */}
-      <Group label="Labels">
-        <Field name="Show">
-          <Pills
-            options={LABEL_OPTIONS}
-            value={theme.encodings.label}
-            onChange={(label) => patchEncodings({ label })}
-          />
-        </Field>
-
-        {theme.encodings.label !== 'none' && (
-          <>
-            <Field name="On which notes">
-              <Pills
-                options={LABEL_TARGETS.map((t) => ({ value: t.id, label: t.label }))}
-                value={theme.encodings.labelOn}
-                onChange={(labelOn: LabelOn) => patchEncodings({ labelOn })}
-              />
-            </Field>
-            <Field name="Typeface">
-              <Pills
-                options={LABEL_FONTS.map((f) => ({ value: f.id, label: f.label }))}
-                value={theme.encodings.labelFont}
-                onChange={(labelFont) => patchEncodings({ labelFont })}
-              />
-            </Field>
-            <Field name="Place">
-              <Pills
-                options={[
-                  { value: 'inside', label: 'Inside' },
-                  { value: 'above', label: 'Above' },
-                  { value: 'below', label: 'Below' },
-                ]}
-                value={theme.encodings.labelPlace}
-                onChange={(labelPlace) => patchEncodings({ labelPlace })}
-              />
-            </Field>
-            <Field name="Case">
-              <Pills
-                options={[
-                  { value: 'as-is', label: 'As is' },
-                  { value: 'upper', label: 'UPPER' },
-                  { value: 'lower', label: 'lower' },
-                ]}
-                value={theme.encodings.labelCase}
-                onChange={(labelCase) => patchEncodings({ labelCase })}
-              />
-            </Field>
-            <Field name="Ink">
-              <Pills
-                options={LABEL_INKS.map((i) => ({ value: i.id, label: i.label }))}
-                value={theme.encodings.labelInk}
-                onChange={(labelInk: LabelInk) => patchEncodings({ labelInk })}
-              />
-            </Field>
-            {theme.encodings.labelInk === 'tint' && (
-              <Field
-                name="Shade"
-                value={
-                  theme.encodings.labelTint === 0
-                    ? 'same as note'
-                    : `${Math.round(Math.abs(theme.encodings.labelTint) * 100)}% ${
-                        theme.encodings.labelTint < 0 ? 'darker' : 'lighter'
-                      }`
-                }
-              >
-                <Slider
-                  label="Label shade"
-                  min={-0.55}
-                  max={0.55}
-                  step={0.01}
-                  value={theme.encodings.labelTint}
-                  onChange={(labelTint) => patchEncodings({ labelTint })}
-                />
-              </Field>
-            )}
-            {/* Directly under the control that causes it. Measured over the
-                notes actually on the page, so it counts the colours this piece
-                uses and any overrides applied to it — sweeping the palette
-                instead warned about notes that were not there and missed ones
-                that were. */}
-            {worstLabel && (
-              <p className={`note-text${worstLabel.ratio < 3 ? ' warn' : ''}`}>
-                <ContrastDot fill={worstLabel.fill} />
-                Weakest label {worstLabel.ratio.toFixed(1)}:1
-                {worstLabel.ratio < 3
-                  ? ' — under the 3:1 floor. Push the shade further, or fade it less.'
-                  : worstLabel.ratio < 4.5
-                    ? ' — readable, not at small sizes.'
-                    : ' — comfortable.'}
-              </p>
-            )}
-            <div className="slider-pair">
-              <Field name="Size" value={`${Math.round(theme.encodings.labelScale * 100)}%`}>
-                <Slider
-                  label="Label size"
-                  min={0.6}
-                  max={1.6}
-                  step={0.05}
-                  value={theme.encodings.labelScale}
-                  onChange={(labelScale) => patchEncodings({ labelScale })}
-                />
-              </Field>
-              <Field name="Fade" value={`${Math.round(theme.encodings.labelOpacity * 100)}%`}>
-                <Slider
-                  label="Label opacity"
-                  min={0.1}
-                  max={1}
-                  step={0.05}
-                  value={theme.encodings.labelOpacity}
-                  onChange={(labelOpacity) => patchEncodings({ labelOpacity })}
-                />
-              </Field>
-              <Field name="Weight" value={`${theme.encodings.labelWeight}`}>
-                <Slider
-                  label="Label weight"
-                  min={300}
-                  max={800}
-                  step={50}
-                  value={theme.encodings.labelWeight}
-                  onChange={(labelWeight) => patchEncodings({ labelWeight })}
-                />
-              </Field>
-              <Field name="Tracking" value={`${theme.encodings.labelTracking.toFixed(1)}`}>
-                <Slider
-                  label="Label tracking"
-                  min={-0.5}
-                  max={2}
-                  step={0.1}
-                  value={theme.encodings.labelTracking}
-                  onChange={(labelTracking) => patchEncodings({ labelTracking })}
-                />
-              </Field>
-            </div>
-            {theme.encodings.labelPlace === 'inside' && noteHeight < 13 && (
-              <p className="note-text warn">
-                At this note height a label inside will be cramped. Try Above, or raise the
-                note height on the Page tab.
-              </p>
-            )}
-          </>
-        )}
-
-        <Switch
-          label="Louder notes are larger"
-          checked={theme.encodings.sizeByVelocity}
-          onChange={(sizeByVelocity) => patchEncodings({ sizeByVelocity })}
-        />
-      </Group>
     </div>
   )
 }
+
 
 const sameTrail = (a: TrailConfig, b: TrailConfig): boolean =>
   Math.abs(a.thickness - b.thickness) < 0.02 &&
@@ -866,10 +753,326 @@ function TrailMark({ trail }: { trail: TrailConfig }) {
 
 // ---------------------------------------------------------------------------
 
-function PageTab() {
+/**
+ * Everything that decides which notes come forward and which sit back.
+ *
+ * Grouped by the question rather than by the property, so brightness, chroma,
+ * hollowness and size sit together even though they are four unrelated bits of
+ * drawing code. Somebody wanting the left hand to recede does not know or care
+ * which of them will do it, and having them side by side is what makes the
+ * choice between them visible.
+ */
+function EmphasisTab() {
+  const theme = useStore((s) => s.theme)
+  const patchEncodings = useStore((s) => s.patchEncodings)
+  const color = theme.encodings.color
+  const patchColor = (patch: Partial<ColorConfig>) =>
+    patchEncodings({ color: { ...color, ...patch } })
+
+  const lightSource = LIGHTNESS_SOURCES.find((l) => l.id === color.lightnessBy)
+  const chromaSource = CHROMA_SOURCES.find((c) => c.id === color.chromaBy)
+
+  return (
+    <div className="columns columns--3">
+      {/* Hue and brightness are not read the same way: colours differing in hue
+          but not brightness resolve slowly, because the fast achromatic part of
+          vision cannot see the difference. A palette with perfectly even
+          lightness looks immaculate and gives that channel nothing. */}
+      <Group label="Brightness">
+        <Field name="Follows">
+          <Pills
+            options={LIGHTNESS_SOURCES.map((l) => ({ value: l.id, label: l.label }))}
+            value={color.lightnessBy}
+            onChange={(lightnessBy) => patchColor({ lightnessBy })}
+          />
+        </Field>
+        {color.lightnessBy !== 'none' && (
+          <Field name="Spread" value={`${Math.round(color.lightnessSpread * 100)}%`}>
+            <Slider
+              label="Brightness spread"
+              min={0.04}
+              max={0.34}
+              step={0.02}
+              value={color.lightnessSpread}
+              onChange={(lightnessSpread) => patchColor({ lightnessSpread })}
+            />
+          </Field>
+        )}
+        <p className="note-text">{lightSource?.note}</p>
+      </Group>
+
+      {/* Saturation is the weakest of the three colour channels — chroma
+          differences resolve slowly and disappear under colour vision
+          deficiency — so it is offered as figure and ground rather than as a
+          way to tell notes apart. Greying what is outside the key leaves every
+          note its own hue and simply moves it behind the rest. */}
+      <Group label="Saturation">
+        <Field name="Follows">
+          <Pills
+            options={CHROMA_SOURCES.map((c) => ({ value: c.id, label: c.label }))}
+            value={color.chromaBy}
+            onChange={(chromaBy) => patchColor({ chromaBy })}
+          />
+        </Field>
+        {/* Labelled by how far it drops, not by what is left, so dragging right
+            and the number going up agree with each other. */}
+        {color.chromaBy !== 'none' && (
+          <Field name="Drop by" value={`${Math.round(color.chromaSpread * 100)}%`}>
+            <Slider
+              label="Saturation drop"
+              min={0}
+              max={1}
+              step={0.05}
+              value={color.chromaSpread}
+              onChange={(chromaSpread) => patchColor({ chromaSpread })}
+            />
+          </Field>
+        )}
+        <p className="note-text">
+          {chromaSource?.note}
+          {color.chromaBy !== 'none' &&
+            ' Reinforce it with brightness or shape — chroma alone is a slow read, and none of it survives colour blindness.'}
+        </p>
+      </Group>
+
+      <Group label="Weight">
+        <Field name="Draw hollow">
+          <Pills
+            options={OUTLINE_TARGETS.map((t) => ({ value: t.id, label: t.label }))}
+            value={theme.encodings.outlineWhat}
+            onChange={(outlineWhat: OutlineWhat) => patchEncodings({ outlineWhat })}
+          />
+        </Field>
+        {theme.encodings.outlineWhat !== 'none' && (
+          <Field name="Hollow style">
+            <Pills
+              options={[
+                { value: 'hollow', label: 'Outline' },
+                { value: 'tinted', label: 'Tinted' },
+              ]}
+              value={theme.encodings.outlineStyle}
+              onChange={(outlineStyle) => patchEncodings({ outlineStyle })}
+            />
+          </Field>
+        )}
+        <Switch
+          label="Louder notes are larger"
+          checked={theme.encodings.sizeByVelocity}
+          onChange={(sizeByVelocity) => patchEncodings({ sizeByVelocity })}
+        />
+      </Group>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Labels, on their own tab.
+ *
+ * They earned it: eleven controls, which is three times what any of its
+ * neighbours carries. Sharing a column with Shape and Trail meant the last of
+ * them sat below a scrollbar.
+ */
+function LabelsTab() {
+  const theme = useStore((s) => s.theme)
+  const score = useStore((s) => s.score)
+  const layout = useStore((s) => s.theme.layout)
+  const patchEncodings = useStore((s) => s.patchEncodings)
+  const noteHeight = layout.laneHeight * (layout.mode === 'staff' ? 1.85 : 0.86)
+  const { encodings } = theme
+
+  const worstLabel = useMemo(
+    () => (score ? worstLabelContrast(score.notes, theme, (n) => keyAt(score, n.onset)) : null),
+    [score, theme],
+  )
+
+  if (encodings.label === 'none') {
+    return (
+      <div className="columns columns--4">
+        {/* Labels are the way *off* labels as much as onto them, so the empty
+            state says what they are for rather than just offering the switch. */}
+        <Group label="Labels">
+          <Field name="Show">
+            <Pills
+              options={LABEL_OPTIONS}
+              value={encodings.label}
+              onChange={(label) => patchEncodings({ label })}
+            />
+          </Field>
+          <p className="note-text">
+            Text is the slowest channel on the page — a letter has to be looked at, where a
+            colour does not. Turn labels on to learn the colours, then narrow which notes
+            carry one until none do.
+          </p>
+        </Group>
+      </div>
+    )
+  }
+
+  return (
+    <div className="columns columns--4">
+      <Group label="What they say">
+        <Field name="Show">
+          <Pills
+            options={LABEL_OPTIONS}
+            value={encodings.label}
+            onChange={(label) => patchEncodings({ label })}
+          />
+        </Field>
+        <Field name="On which notes">
+          <Pills
+            options={LABEL_TARGETS.map((t) => ({ value: t.id, label: t.label }))}
+            value={encodings.labelOn}
+            onChange={(labelOn: LabelOn) => patchEncodings({ labelOn })}
+          />
+        </Field>
+        <Field name="Case">
+          <Pills
+            options={[
+              { value: 'as-is', label: 'As is' },
+              { value: 'upper', label: 'UPPER' },
+              { value: 'lower', label: 'lower' },
+            ]}
+            value={encodings.labelCase}
+            onChange={(labelCase) => patchEncodings({ labelCase })}
+          />
+        </Field>
+      </Group>
+
+      <Group label="Colour">
+        <Field name="Ink">
+          <Pills
+            options={LABEL_INKS.map((i) => ({ value: i.id, label: i.label }))}
+            value={encodings.labelInk}
+            onChange={(labelInk: LabelInk) => patchEncodings({ labelInk })}
+          />
+        </Field>
+        {encodings.labelInk === 'tint' && (
+          <Field
+            name="Shade"
+            value={
+              encodings.labelTint === 0
+                ? 'same as note'
+                : `${Math.round(Math.abs(encodings.labelTint) * 100)}% ${
+                    encodings.labelTint < 0 ? 'darker' : 'lighter'
+                  }`
+            }
+          >
+            <Slider
+              label="Label shade"
+              min={-0.55}
+              max={0.55}
+              step={0.01}
+              value={encodings.labelTint}
+              onChange={(labelTint) => patchEncodings({ labelTint })}
+            />
+          </Field>
+        )}
+        <Field name="Fade" value={`${Math.round(encodings.labelOpacity * 100)}%`}>
+          <Slider
+            label="Label opacity"
+            min={0.1}
+            max={1}
+            step={0.05}
+            value={encodings.labelOpacity}
+            onChange={(labelOpacity) => patchEncodings({ labelOpacity })}
+          />
+        </Field>
+        {/* Directly under the controls that cause it. Measured over the notes
+            actually on the page, so it counts the colours this piece uses and
+            any overrides applied to it — sweeping the palette instead warned
+            about notes that were not there and missed ones that were. */}
+        {worstLabel && (
+          <p className={`note-text${worstLabel.ratio < 3 ? ' warn' : ''}`}>
+            <ContrastDot fill={worstLabel.fill} />
+            Weakest label {worstLabel.ratio.toFixed(1)}:1
+            {worstLabel.ratio < 3
+              ? ' — under the 3:1 floor. Push the shade further, or fade it less.'
+              : worstLabel.ratio < 4.5
+                ? ' — readable, not at small sizes.'
+                : ' — comfortable.'}
+          </p>
+        )}
+      </Group>
+
+      <Group label="Type">
+        <Field name="Typeface">
+          <Pills
+            options={LABEL_FONTS.map((f) => ({ value: f.id, label: f.label }))}
+            value={encodings.labelFont}
+            onChange={(labelFont) => patchEncodings({ labelFont })}
+          />
+        </Field>
+        <Field name="Place">
+          <Pills
+            options={[
+              { value: 'inside', label: 'Inside' },
+              { value: 'above', label: 'Above' },
+              { value: 'below', label: 'Below' },
+            ]}
+            value={encodings.labelPlace}
+            onChange={(labelPlace) => patchEncodings({ labelPlace })}
+          />
+        </Field>
+        {encodings.labelPlace === 'inside' && noteHeight < 13 && (
+          <p className="note-text warn">
+            At this note height a label inside will be cramped. Try Above, or raise the note
+            height on the Page tab.
+          </p>
+        )}
+      </Group>
+
+      <Group label="Size">
+        <div className="slider-pair">
+          <Field name="Size" value={`${Math.round(encodings.labelScale * 100)}%`}>
+            <Slider
+              label="Label size"
+              min={0.6}
+              max={1.6}
+              step={0.05}
+              value={encodings.labelScale}
+              onChange={(labelScale) => patchEncodings({ labelScale })}
+            />
+          </Field>
+          <Field name="Weight" value={`${encodings.labelWeight}`}>
+            <Slider
+              label="Label weight"
+              min={300}
+              max={800}
+              step={50}
+              value={encodings.labelWeight}
+              onChange={(labelWeight) => patchEncodings({ labelWeight })}
+            />
+          </Field>
+          <Field name="Tracking" value={`${encodings.labelTracking.toFixed(1)}`}>
+            <Slider
+              label="Label tracking"
+              min={-0.5}
+              max={2}
+              step={0.1}
+              value={encodings.labelTracking}
+              onChange={(labelTracking) => patchEncodings({ labelTracking })}
+            />
+          </Field>
+        </div>
+      </Group>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * The staff and the lines under the music.
+ *
+ * Split off the Page tab because the staff editor is eighteen editable things
+ * behind one click target, and page colour, size and grain had nothing to do
+ * with any of them beyond both being "not the notes".
+ */
+function StaffTab() {
   const theme = useStore((s) => s.theme)
   const patchLayout = useStore((s) => s.patchLayout)
-  const setPage = useStore((s) => s.setPage)
   const { layout } = theme
   const isRoll = layout.mode === 'roll'
 
@@ -889,6 +1092,94 @@ function PageTab() {
         { role: 'bar', label: 'Barlines' },
         { role: 'ledger', label: 'Ledger lines' },
       ]
+
+  // One group per line role, side by side. Stacking them under the staff editor
+  // put the whole tab in a single column and left two empty — the reason this
+  // was the one tab that scrolled twice the panel's height.
+  const shown = isRoll ? roles : roles.filter((r) => r.role === 'bar' || r.role === 'ledger')
+
+  return (
+    <div className={`columns columns--${isRoll ? 4 : 3}`}>
+      <Group label={isRoll ? 'Reference' : 'Staff'}>
+        {!isRoll && (
+          <StaffEditor
+            staff={layout.staff}
+            base={layout.lines.staff}
+            surface={theme.surface}
+            onChange={(staff) => patchLayout({ staff })}
+          />
+        )}
+        {isRoll && (
+          <Field name="Anchor on">
+            {/* Judging a mark against a line is far more precise than judging it
+                in empty space, so a roll with no horizontal reference makes
+                pitch needlessly hard to read. */}
+            <Pills
+              options={ANCHOR_OPTIONS.map((a) => ({ value: a.id, label: a.label }))}
+              value={layout.anchorOn}
+              onChange={(anchorOn) => patchLayout({ anchorOn })}
+            />
+          </Field>
+        )}
+      </Group>
+
+      {shown.map(({ role, label }) => {
+          const style = layout.lines[role]
+          return (
+            <Group label={label} key={role}>
+            <div className="line-editor">
+              <Switch
+                label={label}
+                checked={style.show}
+                onChange={(show) => patchLine(role, { show })}
+              />
+              {style.show && (
+                <div className="line-editor__body">
+                  <Pills
+                    options={DASH_KINDS.map((d) => ({ value: d.id, label: d.label }))}
+                    value={style.dash}
+                    onChange={(dash) => patchLine(role, { dash })}
+                  />
+                  <div className="line-editor__sliders">
+                    <Field name="Weight" value={style.width.toFixed(1)}>
+                      <Slider
+                        label={`${label} weight`}
+                        min={0.5}
+                        max={5}
+                        step={0.25}
+                        value={style.width}
+                        onChange={(width) => patchLine(role, { width })}
+                      />
+                    </Field>
+                    <Field name="Strength" value={`${Math.round(style.opacity * 100)}%`}>
+                      <Slider
+                        label={`${label} strength`}
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={style.opacity}
+                        onChange={(opacity) => patchLine(role, { opacity })}
+                      />
+                    </Field>
+                  </div>
+                </div>
+              )}
+            </div>
+            </Group>
+          )
+        })}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+function PageTab() {
+  const theme = useStore((s) => s.theme)
+  const patchLayout = useStore((s) => s.patchLayout)
+  const setPage = useStore((s) => s.setPage)
+  const { layout } = theme
+  const isRoll = layout.mode === 'roll'
 
   return (
     <div className="columns columns--3">
@@ -936,103 +1227,41 @@ function PageTab() {
           </Field>
         )}
 
-        <Field name="Note height" value={`${layout.laneHeight}`}>
-          <Slider
-            label="Note height"
-            min={7}
-            max={26}
-            value={layout.laneHeight}
-            onChange={(laneHeight) => patchLayout({ laneHeight })}
-          />
-        </Field>
-        <Field
-          name="Bars per line"
-          value={layout.barsPerSystem > 0 ? `${layout.barsPerSystem}` : 'Auto'}
-        >
-          <Slider
-            label="Bars per line"
-            min={0}
-            max={12}
-            value={layout.barsPerSystem}
-            onChange={(barsPerSystem) => patchLayout({ barsPerSystem })}
-          />
-        </Field>
-        <Field name="Between lines" value={`${layout.systemGap}`}>
-          <Slider
-            label="Space between lines"
-            min={16}
-            max={110}
-            value={layout.systemGap}
-            onChange={(systemGap) => patchLayout({ systemGap })}
-          />
-        </Field>
-      </Group>
-
-      <Group label={isRoll ? 'Lines' : 'Staff'}>
-        {!isRoll && (
-          <StaffEditor
-            staff={layout.staff}
-            base={layout.lines.staff}
-            surface={theme.surface}
-            onChange={(staff) => patchLayout({ staff })}
-          />
-        )}
-        {isRoll && (
-          <Field name="Anchor on">
-            {/* Judging a mark against a line is far more precise than judging it
-                in empty space, so a roll with no horizontal reference makes
-                pitch needlessly hard to read. */}
-            <Pills
-              options={ANCHOR_OPTIONS.map((a) => ({ value: a.id, label: a.label }))}
-              value={layout.anchorOn}
-              onChange={(anchorOn) => patchLayout({ anchorOn })}
+        {/* Three numbers that are read together — bars per line sets the scale
+            everything else is measured against — so they share a grid rather
+            than running the column past the panel's height. */}
+        <div className="slider-pair">
+          <Field name="Note height" value={`${layout.laneHeight}`}>
+            <Slider
+              label="Note height"
+              min={7}
+              max={26}
+              value={layout.laneHeight}
+              onChange={(laneHeight) => patchLayout({ laneHeight })}
             />
           </Field>
-        )}
-
-        {(isRoll ? roles : roles.filter((r) => r.role === 'bar' || r.role === 'ledger')).map(({ role, label }) => {
-          const style = layout.lines[role]
-          return (
-            <div className="line-editor" key={role}>
-              <Switch
-                label={label}
-                checked={style.show}
-                onChange={(show) => patchLine(role, { show })}
-              />
-              {style.show && (
-                <div className="line-editor__body">
-                  <Pills
-                    options={DASH_KINDS.map((d) => ({ value: d.id, label: d.label }))}
-                    value={style.dash}
-                    onChange={(dash) => patchLine(role, { dash })}
-                  />
-                  <div className="line-editor__sliders">
-                    <Field name="Weight" value={style.width.toFixed(1)}>
-                      <Slider
-                        label={`${label} weight`}
-                        min={0.5}
-                        max={5}
-                        step={0.25}
-                        value={style.width}
-                        onChange={(width) => patchLine(role, { width })}
-                      />
-                    </Field>
-                    <Field name="Strength" value={`${Math.round(style.opacity * 100)}%`}>
-                      <Slider
-                        label={`${label} strength`}
-                        min={0.1}
-                        max={1}
-                        step={0.05}
-                        value={style.opacity}
-                        onChange={(opacity) => patchLine(role, { opacity })}
-                      />
-                    </Field>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+          <Field
+            name="Bars per line"
+            value={layout.barsPerSystem > 0 ? `${layout.barsPerSystem}` : 'Auto'}
+          >
+            <Slider
+              label="Bars per line"
+              min={0}
+              max={12}
+              value={layout.barsPerSystem}
+              onChange={(barsPerSystem) => patchLayout({ barsPerSystem })}
+            />
+          </Field>
+          <Field name="Between lines" value={`${layout.systemGap}`}>
+            <Slider
+              label="Space between lines"
+              min={16}
+              max={110}
+              value={layout.systemGap}
+              onChange={(systemGap) => patchLayout({ systemGap })}
+            />
+          </Field>
+        </div>
       </Group>
 
       <Group label="Page">
@@ -1085,6 +1314,9 @@ function PageTab() {
           </Field>
         )}
 
+      </Group>
+
+      <Group label="Show">
         <Switch
           label="Bar numbers"
           checked={layout.showMeasureNumbers}

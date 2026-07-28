@@ -15,7 +15,7 @@
 
 import type { KeyMark, NoteEvent } from './types'
 import { isBlackKey, letterIndex, octaveOf, pitchClass, scaleDegree } from './pitch'
-import { inkOn, oklch } from './oklch'
+import { inkOn, oklch, shiftLightness } from './oklch'
 
 export type ShapeKind =
   | 'capsule'
@@ -272,7 +272,61 @@ export interface ColorConfig {
   lightnessBy: LightnessBy
   /** How far the brightness spreads, in OKLab lightness. */
   lightnessSpread: number
+  /**
+   * A multiplier on the tone's chroma, for the whole palette. 1 is the tone as
+   * designed, 0 is a set of greys separated only by brightness.
+   *
+   * Kept separate from `tone` because tone bundles lightness and chroma into
+   * six named points, and wanting Bright-but-calmer should not mean hunting for
+   * whichever preset happens to be near it.
+   */
+  saturation: number
+  /**
+   * What varies saturation from note to note.
+   *
+   * Weaker than brightness and much weaker than hue — chroma differences are
+   * resolved slowly and vanish entirely under colour vision deficiency — so
+   * this is a figure-and-ground control rather than a way to encode identity.
+   * Greying the notes outside the key pushes them behind the ones that carry
+   * the harmony without changing any note's colour identity.
+   */
+  chromaBy: ChromaBy
+  /** How far saturation drops for the notes this pushes back, 0 to 1. */
+  chromaSpread: number
+  /**
+   * Slots rendered without hue at all.
+   *
+   * Twelve hues is more than anyone reliably tells apart at a glance, and an
+   * achromatic note is the one mark that survives every kind of colour vision
+   * deficiency intact. Making one or two pitch classes black or white removes
+   * them from the hue problem entirely and leaves unmistakable landmarks in the
+   * middle of the colour.
+   *
+   * Which of black or white works depends on the page, so it is chosen rather
+   * than derived: on a dark page white anchors read and black ones disappear.
+   */
+  achromatic?: Achromatic[]
 }
+
+export type Achromatic = 'none' | 'light' | 'dark'
+
+/** The two achromatic anchors. Fixed, so they never drift toward a hue. */
+export const ANCHOR_LIGHT = '#f2f4f8'
+export const ANCHOR_DARK = '#15181f'
+
+export type ChromaBy = 'none' | 'outsideKey' | 'accidentals' | 'hand' | 'register'
+
+export const CHROMA_SOURCES: { id: ChromaBy; label: string; note: string }[] = [
+  { id: 'none', label: 'Nothing', note: 'Every note equally saturated.' },
+  {
+    id: 'outsideKey',
+    label: 'Outside the key',
+    note: 'Notes outside the key go grey, so the ones carrying the harmony sit in front of them.',
+  },
+  { id: 'accidentals', label: 'Sharps & flats', note: 'Accidentals greyed, naturals full.' },
+  { id: 'hand', label: 'Hands', note: 'One hand vivid, the other muted — useful when practising one at a time.' },
+  { id: 'register', label: 'Register', note: 'Saturation falls away from middle C, so the extremes recede.' },
+]
 
 export type LightnessBy = 'none' | 'register' | 'hand' | 'alternate' | 'accidentals'
 
@@ -293,7 +347,42 @@ export const DEFAULT_COLOR: ColorConfig = {
   accidentalShade: 'same',
   lightnessBy: 'none',
   lightnessSpread: 0.14,
+  saturation: 1,
+  chromaBy: 'none',
+  chromaSpread: 0.7,
 }
+
+/**
+ * How much of its saturation this note keeps, as a multiplier.
+ *
+ * Needs the key, unlike its brightness counterpart, because the one genuinely
+ * useful saturation source is whether a note belongs to the key being played.
+ */
+export function chromaScale(config: ColorConfig, note: NoteEvent, key: KeyMark): number {
+  if (config.chromaBy === 'none' || config.chromaSpread === 0) return 1
+  const muted = 1 - Math.min(1, Math.max(0, config.chromaSpread))
+
+  switch (config.chromaBy) {
+    case 'outsideKey': {
+      const scale = key.mode === 'minor' ? MINOR_DEGREES : MAJOR_DEGREES
+      return scale.has(scaleDegree(note.midi, key)) ? 1 : muted
+    }
+    case 'accidentals':
+      return isNatural(pitchClass(note.midi)) ? 1 : muted
+    case 'hand':
+      return note.hand === 'right' ? 1 : muted
+    case 'register': {
+      // Full at middle C, falling to `muted` two octaves out either way.
+      const t = Math.min(1, Math.abs(note.midi - 60) / 24)
+      return 1 - t * (1 - muted)
+    }
+    default:
+      return 1
+  }
+}
+
+const MAJOR_DEGREES = new Set([0, 2, 4, 5, 7, 9, 11])
+const MINOR_DEGREES = new Set([0, 2, 3, 5, 7, 8, 10])
 
 /**
  * How far this note's brightness moves from the palette's own lightness.
@@ -445,13 +534,22 @@ export function buildPalette(config: ColorConfig): Palette {
     config.tone,
     config.rotate,
     config.accidentalShade,
+    config.saturation ?? 1,
+    (config.achromatic ?? []).join(''),
     (config.hueShift ?? []).map(Math.round).join(','),
   ].join('|')
   const hit = cache.get(key)
   if (hit) return hit
 
-  const tone = toneById(config.tone)
+  const raw = toneById(config.tone)
+  // Saturation scales the tone rather than replacing it, so a tone stays
+  // recognisably itself at any level and 1 is always what it was designed as.
+  const tone = { ...raw, chroma: raw.chroma * (config.saturation ?? 1) }
   const order = HUE_ORDERS.find((o) => o.id === config.order)!
+  const anchor = (slot: number): string | null => {
+    const kind = config.achromatic?.[slot] ?? 'none'
+    return kind === 'light' ? ANCHOR_LIGHT : kind === 'dark' ? ANCHOR_DARK : null
+  }
 
   if (config.basis === 'letter') {
     const L = Array.isArray(tone.lightness) ? tone.lightness[0] : tone.lightness
@@ -465,13 +563,16 @@ export function buildPalette(config: ColorConfig): Palette {
 
     for (let letter = 0; letter < 7; letter++) {
       const hue = noteHue(config, letter)
-      colors.push(oklch(L, tone.chroma, hue))
-      onColor.push(inkOn(L))
+      const fixed = anchor(letter)
+      const anchorL = fixed === ANCHOR_LIGHT ? 0.96 : 0.18
+      colors.push(fixed ?? oklch(L, tone.chroma, hue))
+      onColor.push(inkOn(fixed ? anchorL : L))
       // Same hue, optionally a shade off — so an accidental stays recognisably
-      // a kind of its natural rather than becoming a separate colour.
+      // a kind of its natural rather than becoming a separate colour. An
+      // achromatic letter shades by lightness alone, having no hue to keep.
       const altL = clamp01(L + delta)
-      altColors.push(oklch(altL, tone.chroma, hue))
-      altOnColor.push(inkOn(altL))
+      altColors.push(fixed ? shiftLightness(fixed, delta) : oklch(altL, tone.chroma, hue))
+      altOnColor.push(inkOn(fixed ? clamp01(anchorL + delta) : altL))
     }
 
     const palette: Palette = {
@@ -508,8 +609,9 @@ export function buildPalette(config: ColorConfig): Palette {
     const L = Array.isArray(lightness)
       ? lightness[byKeys ? (isNatural(pc) ? 0 : 1) : pc % 2]
       : lightness
-    colors.push(oklch(L, tone.chroma, noteHue(config, pc)))
-    onColor.push(inkOn(L))
+    const fixed = anchor(pc)
+    colors.push(fixed ?? oklch(L, tone.chroma, noteHue(config, pc)))
+    onColor.push(inkOn(fixed ? (fixed === ANCHOR_LIGHT ? 0.96 : 0.18) : L))
   }
 
   const palette: Palette = {

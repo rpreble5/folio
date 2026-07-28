@@ -123,6 +123,29 @@ export function shiftLightness(hex: string, delta: number): string {
 }
 
 /**
+ * Scale a colour's chroma while holding its lightness and hue.
+ *
+ * Factor 0 is a true grey of the same brightness, not black — which is what
+ * makes desaturation usable as a channel. A note pushed to grey keeps its place
+ * in the brightness ordering and simply stops competing for attention, where
+ * darkening it would move it in a dimension something else may already be using.
+ */
+export function scaleChroma(hex: string, factor: number): string {
+  const lab = hexToOklab(hex)
+  if (!lab || factor === 1) return hex
+  const chroma = Math.hypot(lab.a, lab.b) * Math.max(0, factor)
+  const hue = (Math.atan2(lab.b, lab.a) * 180) / Math.PI
+  return oklch(lab.L, chroma, hue)
+}
+
+/** How saturated a colour is, in OKLab chroma. Around 0.03 reads as grey. */
+export function chromaOf(hex: string): number {
+  const lab = hexToOklab(hex)
+  if (!lab) return 0
+  return Math.hypot(lab.a, lab.b)
+}
+
+/**
  * Move a colour to an absolute lightness, capping how much chroma comes with it.
  *
  * The cap is the point. A pale cream carries little chroma *relative to its

@@ -188,8 +188,13 @@ export default function App() {
     )
   }
 
+  // Two tabs are workbenches rather than rows of settings — the hue wheel and
+  // the staff editor are both things you look *at* while dragging — so they
+  // borrow height from the score, which stays visible either way.
+  const lab = studioTab === 'colour' || studioTab === 'staff'
+
   return (
-    <div className={studioTab === 'colour' ? 'app app--lab' : 'app'}>
+    <div className={lab ? 'app app--lab' : 'app'}>
       <header className="topbar">
         <button className="wordmark" onClick={() => setScreen('library')}>
           <span className="wordmark__dot" />
