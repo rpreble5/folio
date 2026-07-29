@@ -1770,8 +1770,11 @@ button {
    ratio and collapsing ten lines into three. */
 .staff-mini {
   display: block;
-  background: var(--surface-2);
   border-radius: var(--radius-sm);
   flex: none;
   align-self: flex-start;
+  /* A hairline rather than a fill, because the fill is now the page colour and
+     a light page needs an edge to read as an object on the panel. */
+  box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(0 0 0 / 0.25);
+  overflow: hidden;
 }

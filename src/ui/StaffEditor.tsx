@@ -12,6 +12,7 @@
  * and sixty. Side by side they both fit, and there is room for colour too.
  */
 
+import { useState, type ReactNode } from 'react'
 import {
   DASH_KINDS,
   STAFF_LINE_NAMES,
@@ -28,15 +29,34 @@ import {
 } from '../core/theme'
 import { Field, Pills, Range, Swatches, Switch } from './controls'
 
-const W = 188
-const PAD = 10
-const GAP = 13 // between adjacent lines within a staff
-const MID = 26 // the gap that holds middle C
+/*
+ * Geometry.
+ *
+ * The gaps are wider than a real staff's because both the lines and the spaces
+ * between them have to be clickable. At the previous 13px spacing a ±5px line
+ * band left three pixels of space between two of them, which is not a target —
+ * so a space could only be reached by luck. At 18 a line band gets eight pixels
+ * and the space between gets ten, and both are comfortable.
+ */
+const W = 210
+const GUTTER = 27 // where the line names sit
+const PAD_X = 9
+const PAD_Y = 13
+const GAP = 18 // between adjacent lines within a staff
+const MID = 34 // the wider gap that holds middle C
+const LINE_BAND = 8
+const NAME_SIZE = 8.5
 
-/** Line y positions, top (F5) down to bottom (G2). */
+/**
+ * Line y positions, top (F5) down to bottom (G2).
+ *
+ * The half pixel matters: a one-pixel line centred on a whole coordinate covers
+ * half of each neighbouring device pixel and renders as two grey rows instead of
+ * one crisp one. Most of the jankiness of the old miniature was this.
+ */
 function lineYs(): number[] {
   const ys: number[] = []
-  let y = PAD
+  let y = PAD_Y + 0.5
   for (let i = 0; i < 10; i++) {
     ys.push(y)
     y += i === 4 ? MID : GAP
@@ -45,7 +65,9 @@ function lineYs(): number[] {
 }
 
 const YS = lineYs()
-const HEIGHT = YS[9] + PAD
+const HEIGHT = YS[9] + PAD_Y
+const X0 = GUTTER
+const X1 = W - PAD_X
 
 /** Index 0 is the bottom line, so the drawing order is reversed. */
 const yOfLine = (index: number): number => YS[9 - index]
@@ -99,6 +121,24 @@ export function lineSwatches(
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The staff, at a size you can point at.
+ *
+ * Three things make this a preview rather than a diagram, and all three were
+ * missing before.
+ *
+ * It sits on the *page* colour, not the panel's. A pale line on the dark panel
+ * looked fine and then vanished on paper, so the one thing the preview existed
+ * to tell you was the thing it got wrong.
+ *
+ * Every line is named, in a gutter that is part of its own hit target. "Line 3"
+ * means nothing; D3 means something, and having to click a line to find out
+ * which one it was is the reason this felt like guesswork.
+ *
+ * Selection and hover share one idiom — a band across the row and a rail in the
+ * gutter — instead of the old dot-for-lines and dashed-outline-for-spaces. Two
+ * marks for one meaning is most of what reads as unfinished.
+ */
 export function StaffPicker({
   staff,
   base,
@@ -115,6 +155,59 @@ export function StaffPicker({
   selected: Selection
   onSelect: (sel: Selection) => void
 }) {
+  const [hover, setHover] = useState<Selection | null>(null)
+  const same = (a: Selection | null, b: Selection) =>
+    a !== null && a.kind === b.kind && a.index === b.index
+
+  /** One row: the band behind it, the gutter rail, and the pointer handling. */
+  const Row = ({
+    sel,
+    top,
+    height,
+    children,
+  }: {
+    sel: Selection
+    top: number
+    height: number
+    children?: ReactNode
+  }) => {
+    const on = same(selected, sel)
+    const over = same(hover, sel)
+    return (
+      <g
+        onClick={() => onSelect(sel)}
+        onPointerEnter={() => setHover(sel)}
+        onPointerLeave={() => setHover(null)}
+        style={{ cursor: 'pointer' }}
+      >
+        <rect
+          x={0}
+          y={top}
+          width={W}
+          height={height}
+          rx={3}
+          fill={surface.text}
+          opacity={on ? 0.1 : over ? 0.05 : 0}
+        />
+        {/* Inset, or the rounded frame clips it into a nub. Drawn in the page's
+            own ink so it reads on a dark page and a light one alike — the accent
+            is a fixed colour and vanished on one of them. */}
+        {on && (
+          <rect
+            x={4}
+            y={top + 1.5}
+            width={2.5}
+            height={Math.max(3, height - 3)}
+            rx={1.25}
+            fill={surface.text}
+            opacity={0.8}
+          />
+        )}
+        {children}
+      </g>
+    )
+  }
+
   return (
     <svg
       className="staff-mini"
@@ -123,62 +216,108 @@ export function StaffPicker({
       viewBox={`0 0 ${W} ${HEIGHT}`}
       role="group"
       aria-label="Staff lines and spaces"
+      style={{ background: surface.background }}
     >
-      {/* Spaces first — they sit behind the lines that bound them. */}
+      {/* Shaded spaces, drawn first so the lines that bound them sit on top. */}
       {Array.from({ length: 9 }, (_, i) => {
-        const top = yOfLine(i + 1)
-        const bottom = yOfLine(i)
         const space = staff.spaces[i]
-        const on = space && space.fill !== '@none'
-        const active = selected.kind === 'space' && selected.index === i
+        if (!space || space.fill === '@none') return null
+        const top = yOfLine(i + 1)
         return (
           <rect
-            key={`s${i}`}
-            x={0}
+            key={`fill${i}`}
+            x={X0}
             y={top}
-            width={W}
-            height={bottom - top}
-            fill={on ? (space.fill === '@auto' ? surface.gridStrong : space.fill) : 'transparent'}
-            fillOpacity={on ? space.opacity : 0}
-            stroke={active ? surface.text : 'transparent'}
-            strokeWidth={active ? 1 : 0}
-            strokeDasharray="2 2"
-            style={{ cursor: 'pointer' }}
-            onClick={() => onSelect({ kind: 'space', index: i })}
+            width={X1 - X0}
+            height={yOfLine(i) - top}
+            fill={space.fill === '@auto' ? surface.gridStrong : space.fill}
+            opacity={space.opacity}
+            pointerEvents="none"
           />
         )
       })}
 
+      {/* The ledger stroke middle C would sit on. The wide gap is only
+          meaningful once you can see what it is a gap for. */}
+      <line
+        x1={(X0 + X1) / 2 - 11}
+        x2={(X0 + X1) / 2 + 11}
+        y1={(yOfLine(4) + yOfLine(5)) / 2}
+        y2={(yOfLine(4) + yOfLine(5)) / 2}
+        stroke={surface.staffLine}
+        strokeWidth={1}
+        opacity={0.28}
+        pointerEvents="none"
+      />
+
+      {/* Space rows: everything between two lines that a line band does not claim. */}
+      {Array.from({ length: 9 }, (_, i) => {
+        const upper = yOfLine(i + 1)
+        const lower = yOfLine(i)
+        const top = upper + LINE_BAND / 2
+        return (
+          <Row
+            key={`s${i}`}
+            sel={{ kind: 'space', index: i }}
+            top={top}
+            height={Math.max(4, lower - LINE_BAND / 2 - top)}
+          />
+        )
+      })}
+
+      {/* Lines last, so a line always wins the click over the space beside it. */}
       {Array.from({ length: 10 }, (_, i) => {
         const style = staffLineStyle(staff, i, base)
         const y = yOfLine(i)
-        const active = selected.kind === 'line' && selected.index === i
+        const on = same(selected, { kind: 'line', index: i })
+        const over = same(hover, { kind: 'line', index: i })
         return (
-          <g key={`l${i}`} onClick={() => onSelect({ kind: 'line', index: i })}>
-            {/* A generous invisible hit area — a 1px line is unclickable. */}
-            <rect
-              x={0}
-              y={y - 5}
-              width={W}
-              height={10}
-              fill="transparent"
-              style={{ cursor: 'pointer' }}
-            />
-            <line
-              x1={4}
-              x2={W - 4}
-              y1={y}
-              y2={y}
-              stroke={style.show ? lineColor(style, 'staff', surface, noteColors[i]) : surface.grid}
-              strokeWidth={style.show ? Math.max(0.8, style.width) : 1}
-              strokeDasharray={style.show ? dashArray(style.dash, style.width) : '1 3'}
-              opacity={style.show ? style.opacity : 0.4}
+          <Row
+            key={`l${i}`}
+            sel={{ kind: 'line', index: i }}
+            top={y - LINE_BAND / 2}
+            height={LINE_BAND}
+          >
+            <text
+              x={GUTTER - 8}
+              y={y + NAME_SIZE * 0.37}
+              textAnchor="end"
+              fontSize={NAME_SIZE}
+              fill={surface.text}
+              opacity={on ? 0.95 : over ? 0.7 : 0.4}
+              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
               pointerEvents="none"
-            />
-            {active && (
-              <circle cx={W - 1} cy={y} r={2.5} fill={surface.text} pointerEvents="none" />
+            >
+              {STAFF_LINE_NAMES[i]}
+            </text>
+            {style.show ? (
+              <line
+                x1={X0}
+                x2={X1}
+                y1={y}
+                y2={y}
+                stroke={lineColor(style, 'staff', surface, noteColors[i])}
+                strokeWidth={Math.max(0.9, style.width)}
+                strokeDasharray={dashArray(style.dash, style.width)}
+                opacity={style.opacity}
+                pointerEvents="none"
+              />
+            ) : (
+              /* A hidden line still needs a place to be clicked back on, so it
+                 leaves a ghost rather than nothing at all. */
+              <line
+                x1={X0}
+                x2={X1}
+                y1={y}
+                y2={y}
+                stroke={surface.staffLine}
+                strokeWidth={1}
+                strokeDasharray="1.5 3.5"
+                opacity={0.22}
+                pointerEvents="none"
+              />
             )}
-          </g>
+          </Row>
         )
       })}
     </svg>
