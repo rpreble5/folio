@@ -373,6 +373,16 @@ export function ShapeMark({
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
       {shape === 'circle' && <circle cx={c} cy={c} r={r} fill={color} />}
+      {shape === 'oval' && (
+        <ellipse
+          cx={c}
+          cy={c}
+          rx={r * 1.24}
+          ry={r * 0.86}
+          fill={color}
+          transform={`rotate(-21 ${c} ${c})`}
+        />
+      )}
       {shape === 'capsule' && <rect width={size} height={size} rx={r} fill={color} />}
       {shape === 'rect' && <rect width={size} height={size} rx={2} fill={color} />}
       {paths[shape] && <path d={paths[shape]} fill={color} />}

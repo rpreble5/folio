@@ -44,12 +44,16 @@ interface Props {
 /** Heads drawn at a fixed size, with the duration carried by the trail. */
 const HEAD_SHAPES = new Set<ShapeKind>([
   'circle',
+  'oval',
   'hexagon',
   'diamond',
   'triangleUp',
   'triangleDown',
   'chevron',
 ])
+
+/** Degrees. Engraved noteheads sit around twenty; more reads as a slash. */
+const OVAL_TILT = -21
 
 function headPath(shape: ShapeKind, x: number, y: number, size: number, radius: number): string {
   const cx = x + size / 2
@@ -71,6 +75,27 @@ function headPath(shape: ShapeKind, x: number, y: number, size: number, radius: 
     }
     case 'circle':
       return `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
+    case 'oval': {
+      /*
+       * A traditional notehead: an ellipse about 1.4 times wider than tall,
+       * tilted so its long axis rises to the right. The tilt is not decoration
+       * — it is what stops two heads a second apart from overlapping, and it is
+       * the thing that makes the shape read as a notehead rather than a dot.
+       *
+       * Drawn as two arcs using the arc command's own x-axis-rotation, so the
+       * rotation lives in the path data and no wrapping transform is needed.
+       */
+      const rx = r * 1.24
+      const ry = r * 0.86
+      const rad = (OVAL_TILT * Math.PI) / 180
+      const dx = rx * Math.cos(rad)
+      const dy = rx * Math.sin(rad)
+      return (
+        `M ${cx - dx} ${cy - dy}` +
+        ` A ${rx} ${ry} ${OVAL_TILT} 1 1 ${cx + dx} ${cy + dy}` +
+        ` A ${rx} ${ry} ${OVAL_TILT} 1 1 ${cx - dx} ${cy - dy} Z`
+      )
+    }
     case 'capsule':
     case 'rect': {
       const rad = shape === 'capsule' ? r : Math.min(radius, r)

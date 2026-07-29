@@ -19,6 +19,7 @@ import { inkOn, oklch, shiftLightness } from './oklch'
 
 export type ShapeKind =
   | 'capsule'
+  | 'oval'
   | 'rect'
   | 'circle'
   | 'hexagon'
@@ -728,6 +729,13 @@ export const SHAPE_SETS: ShapeSet[] = [
     note: 'Round heads, closest in feel to a traditional notehead.',
     domain: 'fixed',
     shapes: ['circle'],
+  },
+  {
+    id: 'classic',
+    name: 'Classic',
+    note: 'The traditional oval notehead, tilted the way it is engraved. Length still carries duration, so there are no stems or flags to disagree with it.',
+    domain: 'fixed',
+    shapes: ['oval'],
   },
   {
     id: 'accidental',
