@@ -27,6 +27,63 @@ export interface Spelling {
   octave: number
 }
 
+/**
+ * How a note was *written*, as opposed to how long it sounds.
+ *
+ * The IR's `duration` is the sounding length in beats, which is all the app
+ * needed to draw colour and length. Traditional notation needs the other thing:
+ * a two-beat sound could be written as a half note, or as two quarters tied, or
+ * as a quarter tied across a barline — identical in `duration`, three different
+ * pictures. MusicXML records which one the composer wrote, and the importer used
+ * to read past it.
+ *
+ * Undefined for MIDI and for the built-in DSL pieces, which genuinely do not
+ * carry it. Anything reading this must cope with its absence rather than assume.
+ */
+export type NoteType =
+  | 'breve'
+  | 'whole'
+  | 'half'
+  | 'quarter'
+  | 'eighth'
+  | '16th'
+  | '32nd'
+  | '64th'
+  | '128th'
+
+export type BeamState = 'begin' | 'continue' | 'end' | 'forward hook' | 'backward hook'
+
+export interface NotatedSegment {
+  type: NoteType
+  /** Augmentation dots. Each adds half again to the written length. */
+  dots: number
+  /** This segment's own sounding length in quarter-note beats. */
+  beats: number
+  /** Beam states by level, outermost first. Absent when unbeamed. */
+  beams?: BeamState[]
+}
+
+export interface Notated {
+  /**
+   * One entry per written notehead. More than one means the note was tied, and
+   * the entries are in playing order.
+   *
+   * Keeping segments rather than a single type is what lets the renderer go on
+   * drawing a tie as one long shape — which is the right reading of it — while
+   * still knowing it was engraved as two heads and a curve.
+   */
+  segments: NotatedSegment[]
+  /**
+   * The accidental actually printed. Distinct from `spelling.alter`, which is
+   * the sounding alteration whether or not a symbol appeared — a key signature
+   * sharp alters the pitch with no accidental on the note, and a courtesy
+   * natural prints a symbol that alters nothing.
+   */
+  accidental?: string
+  /** The engraver's stem direction, when the file states one. */
+  stem?: 'up' | 'down' | 'none' | 'double'
+}
+
 export interface NoteEvent {
   id: string
   /** Start time in quarter-note beats from the top of the piece. */
@@ -45,6 +102,8 @@ export interface NoteEvent {
   velocity: number
   /** True for the earliest note of its bar, so labels can mark bar starts. */
   firstInBar?: boolean
+  /** How this note was written, when the source said. See Notated. */
+  notated?: Notated
   /** Optional performance hints, encodable as visual channels. */
   finger?: number
   articulation?: 'staccato' | 'accent' | 'tenuto'

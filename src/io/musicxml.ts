@@ -3,15 +3,29 @@
  *
  * MusicXML is the preferred input because it carries what MIDI throws away:
  * how a note is *spelled* (F♯ vs G♭), which staff and voice it belongs to,
- * fingering, and articulation. All of that is encodable as a visual channel, so
- * losing it would quietly shrink what a user can design with.
+ * fingering, articulation, and how the note was *written* — a two-beat sound as
+ * one half note or as two tied quarters. All of that is encodable as a visual
+ * channel, so losing it would quietly shrink what a user can design with.
  *
  * Deliberately unhandled for now: grace notes (no duration to place them in),
  * tuplet bracketing (the ratio is already baked into <duration>), and
  * score-timewise files (vanishingly rare in the wild).
  */
 
-import type { Hand, KeyMark, NoteEvent, Score, Spelling, Step, TempoMark, TimeSignature } from '../core/types'
+import type {
+  BeamState,
+  Hand,
+  KeyMark,
+  Notated,
+  NotatedSegment,
+  NoteEvent,
+  NoteType,
+  Score,
+  Spelling,
+  Step,
+  TempoMark,
+  TimeSignature,
+} from '../core/types'
 import { markBarStarts } from '../core/types'
 import { spellingToMidi } from '../core/pitch'
 
@@ -169,8 +183,12 @@ export function parseMusicXml(xml: string): Score {
               const pending = pendingTies.get(tieKey)
               if (pending !== undefined) {
                 // Extend the held note rather than emitting a second one, so a
-                // tie reads as one long shape instead of two abutting ones.
-                notes[pending.index].duration += duration
+                // tie reads as one long shape instead of two abutting ones. The
+                // written head is still recorded, so a notation renderer can
+                // put the two heads and the curve back.
+                const held = notes[pending.index]
+                held.duration += duration
+                held.notated?.segments.push(readSegment(child, duration))
                 if (!startsTie) pendingTies.delete(tieKey)
                 if (!isChord) cursor += duration
                 measureEnd = Math.max(measureEnd, cursor)
@@ -191,6 +209,7 @@ export function parseMusicXml(xml: string): Score {
               voice,
               measure: measureIndex,
               velocity: dynamic ? 0.9 : 0.7,
+              notated: readNotated(child, duration),
               finger: num(child.querySelector('technical > fingering'), 0) || undefined,
               articulation: readArticulation(child),
             })
@@ -229,6 +248,129 @@ export function parseMusicXml(xml: string): Score {
     keys: keys.length ? dedupeByBeat(keys) : [{ beat: 0, fifths: 0, mode: 'major' }],
     length,
   }
+}
+
+/**
+ * Written length of each note type, in quarter-note beats.
+ *
+ * Ordered longest first only so `inferType` walks it predictably; nothing else
+ * depends on the order. MusicXML's `long` and `maxima` are folded into `breve`
+ * because nothing downstream draws them differently, and anything shorter than
+ * a 128th is folded the other way for the same reason.
+ */
+const TYPE_BEATS: ReadonlyArray<readonly [NoteType, number]> = [
+  ['breve', 8],
+  ['whole', 4],
+  ['half', 2],
+  ['quarter', 1],
+  ['eighth', 0.5],
+  ['16th', 0.25],
+  ['32nd', 0.125],
+  ['64th', 0.0625],
+  ['128th', 0.03125],
+]
+
+const TYPE_ALIASES: Record<string, NoteType> = {
+  maxima: 'breve',
+  long: 'breve',
+  breve: 'breve',
+  whole: 'whole',
+  half: 'half',
+  quarter: 'quarter',
+  eighth: 'eighth',
+  '16th': '16th',
+  '32nd': '32nd',
+  '64th': '64th',
+  '128th': '128th',
+  '256th': '128th',
+  '512th': '128th',
+  '1024th': '128th',
+}
+
+const BEAM_STATES = new Set<string>([
+  'begin',
+  'continue',
+  'end',
+  'forward hook',
+  'backward hook',
+])
+
+const STEM_DIRECTIONS = new Set<string>(['up', 'down', 'none', 'double'])
+
+/** What the engraver printed, as far as the file says it. */
+function readNotated(note: Element, beats: number): Notated {
+  const notated: Notated = { segments: [readSegment(note, beats)] }
+
+  const accidental = text(note.querySelector(':scope > accidental'))
+  if (accidental) notated.accidental = accidental
+
+  const stem = text(note.querySelector(':scope > stem'))
+  if (STEM_DIRECTIONS.has(stem)) notated.stem = stem as Notated['stem']
+
+  return notated
+}
+
+/**
+ * One written notehead.
+ *
+ * `<type>` is optional in MusicXML — a few exporters and most hand-written files
+ * omit it — so the sounding length is the fallback. That inference is only ever
+ * a guess about *spelling*, never about time: `beats` is what the file said, and
+ * it is what the app draws.
+ */
+function readSegment(note: Element, beats: number): NotatedSegment {
+  const written = TYPE_ALIASES[text(note.querySelector(':scope > type'))]
+  const dots = note.querySelectorAll(':scope > dot').length
+  const beams = readBeams(note)
+
+  const segment: NotatedSegment = written
+    ? { type: written, dots, beats }
+    : { ...inferType(beats), beats }
+  if (beams) segment.beams = beams
+  return segment
+}
+
+/**
+ * Beam states, outermost beam first.
+ *
+ * MusicXML numbers beams from 1 (the eighth-note beam) outwards and may skip a
+ * level in malformed files; a skipped level is filled with `continue`, which is
+ * the only reading that keeps the outer beams unbroken.
+ */
+function readBeams(note: Element): BeamState[] | undefined {
+  const elements = Array.from(note.querySelectorAll(':scope > beam'))
+  if (!elements.length) return undefined
+
+  const byLevel: BeamState[] = []
+  for (const element of elements) {
+    const state = text(element)
+    if (!BEAM_STATES.has(state)) continue
+    const level = Math.max(1, Math.round(Number(element.getAttribute('number') ?? 1) || 1))
+    byLevel[level - 1] = state as BeamState
+  }
+
+  if (!byLevel.length) return undefined
+  return Array.from(byLevel, state => state ?? 'continue')
+}
+
+/** The shortest written value that accounts for a sounding length. */
+function inferType(beats: number): { type: NoteType; dots: number } {
+  let best: { type: NoteType; dots: number } = { type: 'quarter', dots: 0 }
+  let closest = Infinity
+
+  for (const [type, base] of TYPE_BEATS) {
+    for (let dots = 0; dots <= 2; dots += 1) {
+      // A dot adds half again, a second dot half of that: base * (2 - 2^-dots).
+      const written = base * (2 - 2 ** -dots)
+      const error = Math.abs(written - beats)
+      if (error < closest - 1e-9) {
+        closest = error
+        best = { type, dots }
+      }
+    }
+  }
+
+  return best
 }
 
 function readArticulation(note: Element): NoteEvent['articulation'] {

@@ -6,3 +6,4 @@ dist
 # scratch screenshot/verification scripts
 .shot.mjs
 .measure.mjs
+.xmlcheck.mjs
