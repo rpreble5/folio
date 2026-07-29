@@ -1731,11 +1731,26 @@ button {
   gap: var(--gap-lg);
 }
 
-/* Five columns: the staff picker is a fixed-width object, so it takes what it
-   needs and the four editors share the rest. */
+/*
+ * Five columns, and the only grid here that fills the panel's height.
+ *
+ * The staff picker is the one control whose usefulness scales with how big it
+ * is — every extra pixel is a bigger target — so it is given the whole height
+ * rather than a size someone typed in. Stretching the row is what gives it a
+ * height to measure; the other four columns stretch too but pack their content
+ * at the top, so nothing else changes.
+ */
 .columns--staff {
   grid-template-columns: auto repeat(4, minmax(0, 1fr));
   gap: var(--gap-lg);
+  height: 100%;
+  align-items: stretch;
+}
+
+.staff-pick {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
 @media (max-width: 1400px) {
@@ -1772,7 +1787,7 @@ button {
   display: block;
   border-radius: var(--radius-sm);
   flex: none;
-  align-self: flex-start;
+  align-self: stretch;
   /* A hairline rather than a fill, because the fill is now the page colour and
      a light page needs an edge to read as an object on the panel. */
   box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(0 0 0 / 0.25);
