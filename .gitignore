@@ -10,3 +10,4 @@ dist
 .fillcheck.mjs
 .restcheck.mjs
 .spacecheck.mjs
+.glyphcheck.mjs
