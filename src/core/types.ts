@@ -128,6 +128,58 @@ export interface KeyMark {
   mode: 'major' | 'minor'
 }
 
+/**
+ * A silence, as written.
+ *
+ * The roll has never needed rests — a gap between notes *is* the silence, drawn
+ * by drawing nothing. Engraved notation cannot do that: a bar of rest has to
+ * show a symbol, and which symbol depends on the written duration, so the
+ * silence has to be a thing in the IR rather than the absence of one.
+ *
+ * Kept in its own list rather than as a pitchless NoteEvent, because every
+ * visual channel in the app answers a question about pitch — colour, shape,
+ * label, hand — and a rest has no answer to any of them.
+ */
+export interface RestEvent {
+  id: string
+  onset: number
+  /** Length in quarter-note beats. */
+  duration: number
+  staff: number
+  voice: number
+  measure: number
+  /** Written type, same as a note's. `segments` will hold exactly one. */
+  notated?: Notated
+  /**
+   * Vertical placement as a diatonic index, when the engraver specified one.
+   * Absent means "wherever the convention puts it", which depends on the clef
+   * and on how many voices share the staff.
+   */
+  displayIndex?: number
+  /** True for a rest standing in for a whole bar, which is centred and bare. */
+  wholeBar?: boolean
+}
+
+export type ClefSign = 'G' | 'F' | 'C' | 'percussion' | 'TAB'
+
+/**
+ * Which clef is in force, and where it sits.
+ *
+ * Needed because a diatonic index only becomes a staff position once you know
+ * the clef. Roll layouts never asked, so the app hardcoded a grand staff; that
+ * is right for most piano music and wrong for everything else, including a
+ * piano part that changes clef mid-bar.
+ */
+export interface ClefMark {
+  beat: number
+  staff: number
+  sign: ClefSign
+  /** Staff line the sign centres on, counting up from 1 at the bottom. */
+  line: number
+  /** Octave transposition. -1 for the tenor G clef, +1 for octave-up. */
+  octaveChange: number
+}
+
 export interface Score {
   id: string
   title: string
@@ -136,6 +188,13 @@ export interface Score {
   tempos: TempoMark[]
   timeSignatures: TimeSignature[]
   keys: KeyMark[]
+  /**
+   * Written silences. Absent for MIDI and the built-in pieces, which have no
+   * notion of one — the engraver fills bars from the gaps instead.
+   */
+  rests?: RestEvent[]
+  /** Clefs in force. Absent means the layout picks by range, as it always has. */
+  clefs?: ClefMark[]
   /** Total length in beats. */
   length: number
 }
@@ -160,6 +219,29 @@ export function keyAt(score: Score, beat: number): KeyMark {
     else break
   }
   return key
+}
+
+/** Treble on the upper staff, bass on the lower — the piano default. */
+const DEFAULT_CLEFS: Record<number, ClefMark> = {
+  1: { beat: 0, staff: 1, sign: 'G', line: 2, octaveChange: 0 },
+  2: { beat: 0, staff: 2, sign: 'F', line: 4, octaveChange: 0 },
+}
+
+/**
+ * The clef in force on a staff at a given beat.
+ *
+ * Falls back to the piano default rather than throwing, so a score with no clef
+ * information — every MIDI import — still engraves as a grand staff instead of
+ * refusing to draw.
+ */
+export function clefAt(score: Score, beat: number, staff: number): ClefMark {
+  let clef = DEFAULT_CLEFS[staff] ?? DEFAULT_CLEFS[1]
+  for (const c of score.clefs ?? []) {
+    if (c.staff !== staff) continue
+    if (c.beat <= beat + 1e-6) clef = c
+    else break
+  }
+  return clef
 }
 
 export function timeSignatureAt(score: Score, beat: number): TimeSignature {

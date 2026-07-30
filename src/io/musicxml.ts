@@ -14,12 +14,15 @@
 
 import type {
   BeamState,
+  ClefMark,
+  ClefSign,
   Hand,
   KeyMark,
   Notated,
   NotatedSegment,
   NoteEvent,
   NoteType,
+  RestEvent,
   Score,
   Spelling,
   Step,
@@ -27,7 +30,7 @@ import type {
   TimeSignature,
 } from '../core/types'
 import { markBarStarts } from '../core/types'
-import { spellingToMidi } from '../core/pitch'
+import { diatonicIndex, spellingToMidi } from '../core/pitch'
 
 const num = (el: Element | null | undefined, fallback = 0): number => {
   const text = el?.textContent?.trim()
@@ -67,6 +70,8 @@ export function parseMusicXml(xml: string): Score {
     'Unknown'
 
   const notes: NoteEvent[] = []
+  const rests: RestEvent[] = []
+  const clefs: ClefMark[] = []
   const tempos: TempoMark[] = []
   const timeSignatures: TimeSignature[] = []
   const keys: KeyMark[] = []
@@ -115,6 +120,20 @@ export function parseMusicXml(xml: string): Score {
                 denominator: num(time.querySelector('beat-type'), 4) || 4,
               })
             }
+
+            // A clef change can appear anywhere, including mid-bar, so this
+            // reads at the cursor rather than at the start of the measure.
+            for (const clef of Array.from(child.querySelectorAll(':scope > clef'))) {
+              const sign = CLEF_SIGNS[text(clef.querySelector('sign'))]
+              if (!sign) continue
+              clefs.push({
+                beat: cursor,
+                staff: Math.max(1, Math.round(Number(clef.getAttribute('number') ?? 1) || 1)),
+                sign,
+                line: num(clef.querySelector('line'), defaultLine(sign)),
+                octaveChange: num(clef.querySelector('clef-octave-change')),
+              })
+            }
             break
           }
 
@@ -153,9 +172,34 @@ export function parseMusicXml(xml: string): Score {
             const isChord = child.querySelector('chord') !== null
             const onset = isChord ? lastOnset : cursor
 
-            if (child.querySelector('rest')) {
-              cursor += duration
+            const restEl = child.querySelector('rest')
+            if (restEl) {
+              idCounter += 1
+              const displayStep = text(restEl.querySelector('display-step'))
+              const displayOctave = restEl.querySelector('display-octave')
+              rests.push({
+                id: `r${idCounter}`,
+                onset,
+                duration,
+                staff: num(child.querySelector('staff'), 1) || 1,
+                voice: num(child.querySelector('voice'), 1) || 1,
+                measure: measureIndex,
+                notated: readNotated(child, duration),
+                displayIndex:
+                  displayStep && displayOctave
+                    ? diatonicIndex({
+                        step: displayStep as Step,
+                        alter: 0,
+                        octave: num(displayOctave, 4),
+                      })
+                    : undefined,
+                // measure="yes" says "this rest stands for the whole bar",
+                // which is drawn centred and without a duration symbol.
+                wholeBar: restEl.getAttribute('measure') === 'yes' || undefined,
+              })
+              if (!isChord) cursor += duration
               measureEnd = Math.max(measureEnd, cursor)
+              lastOnset = onset
               break
             }
 
@@ -233,14 +277,23 @@ export function parseMusicXml(xml: string): Score {
   markBarStarts(notes)
 
   notes.sort((a, b) => a.onset - b.onset || a.midi - b.midi)
+  rests.sort((a, b) => a.onset - b.onset || a.staff - b.staff || a.voice - b.voice)
+  clefs.sort((a, b) => a.beat - b.beat || a.staff - b.staff)
 
-  const length = notes.reduce((max, n) => Math.max(max, n.onset + n.duration), 0)
+  // A trailing rest is still part of the piece — a bar of silence at the end has
+  // to be drawn, so it counts toward the length.
+  const length = Math.max(
+    notes.reduce((max, n) => Math.max(max, n.onset + n.duration), 0),
+    rests.reduce((max, r) => Math.max(max, r.onset + r.duration), 0),
+  )
 
   return {
     id: `import-${Date.now().toString(36)}`,
     title,
     composer,
     notes,
+    rests: rests.length ? rests : undefined,
+    clefs: clefs.length ? dedupeClefs(clefs) : undefined,
     tempos: tempos.length ? dedupeByBeat(tempos) : [{ beat: 0, bpm: 100 }],
     timeSignatures: timeSignatures.length
       ? dedupeByBeat(timeSignatures)
@@ -285,6 +338,28 @@ const TYPE_ALIASES: Record<string, NoteType> = {
   '256th': '128th',
   '512th': '128th',
   '1024th': '128th',
+}
+
+/**
+ * MusicXML clef signs, mapped to ours.
+ *
+ * `jianpu` and `none` are dropped rather than guessed at: both mean "this staff
+ * is not pitched the way a clef implies", and inventing a treble clef for them
+ * would put every note in the wrong place.
+ */
+const CLEF_SIGNS: Record<string, ClefSign> = {
+  G: 'G',
+  F: 'F',
+  C: 'C',
+  percussion: 'percussion',
+  TAB: 'TAB',
+}
+
+/** Where each clef sign sits when the file does not say. */
+function defaultLine(sign: ClefSign): number {
+  if (sign === 'F') return 4
+  if (sign === 'C') return 3
+  return 2
 }
 
 const BEAM_STATES = new Set<string>([
@@ -398,6 +473,32 @@ function assignHand(
   if (staves > 1) return staff >= 2 ? 'left' : 'right'
   if (partCount > 1) return partIndex >= 1 ? 'left' : 'right'
   return midi < 60 ? 'left' : 'right'
+}
+
+/**
+ * Drop clefs that restate what is already in force.
+ *
+ * Exporters repeat the clef in the `<attributes>` of many measures, and every
+ * repeat would otherwise re-draw the sign mid-system. Only a genuine change
+ * survives — which is exactly the set the engraver has to draw.
+ */
+function dedupeClefs(clefs: ClefMark[]): ClefMark[] {
+  const inForce = new Map<number, ClefMark>()
+  const kept: ClefMark[] = []
+
+  for (const clef of clefs) {
+    const current = inForce.get(clef.staff)
+    const same =
+      current !== undefined &&
+      current.sign === clef.sign &&
+      current.line === clef.line &&
+      current.octaveChange === clef.octaveChange
+    if (same) continue
+    inForce.set(clef.staff, clef)
+    kept.push(clef)
+  }
+
+  return kept
 }
 
 /** Keep the last entry at each beat; repeated attributes are common and harmless. */

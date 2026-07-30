@@ -8,3 +8,4 @@ dist
 .measure.mjs
 .xmlcheck.mjs
 .fillcheck.mjs
+.restcheck.mjs
