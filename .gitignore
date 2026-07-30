@@ -9,3 +9,4 @@ dist
 .xmlcheck.mjs
 .fillcheck.mjs
 .restcheck.mjs
+.spacecheck.mjs

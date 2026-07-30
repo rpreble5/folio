@@ -49,6 +49,7 @@ import {
   NO_TEXTURE,
   TINT_DIRS,
   OUTLINE_TARGETS,
+  engravedSpacing,
   TEXTURE_KINDS,
   contrastRatio,
   describeSelector,
@@ -60,6 +61,7 @@ import {
   type LineRole,
   type LineStyle,
   type OutlineWhat,
+  type SpacingConfig,
   type TintDir,
   type TextureConfig,
   type TrailConfig,
@@ -92,6 +94,21 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'staff', label: 'Staff' },
   { id: 'page', label: 'Page' },
 ]
+
+/**
+ * What a duration weight currently amounts to.
+ *
+ * The number alone is meaningless to anyone who has not read the spacing code,
+ * and the two ends of the slider are both named conventions, so the readout says
+ * which one you are near rather than reporting 0.53.
+ */
+function spacingName(power: number): string {
+  if (power >= 0.94) return 'Proportional'
+  if (power >= 0.72) return 'Loose'
+  if (power >= 0.42) return 'Engraved'
+  if (power >= 0.18) return 'Tight'
+  return 'Even'
+}
 
 const LABEL_OPTIONS: { value: LabelKind; label: string }[] = [
   { value: 'none', label: 'None' },
@@ -1248,6 +1265,12 @@ function PageTab() {
   const setPage = useStore((s) => s.setPage)
   const { layout } = theme
   const isRoll = layout.mode === 'roll'
+  const spacing = layout.spacing
+
+  const patchSpacing = (patch: Partial<SpacingConfig>) => {
+    if (!spacing) return
+    patchLayout({ spacing: { ...spacing, ...patch } })
+  }
 
   return (
     <div className="columns columns--3">
@@ -1324,6 +1347,99 @@ function PageTab() {
         onChange={(systemGap) => patchLayout({ systemGap })}
       />
         </div>
+      </Group>
+
+      <Group label="Spacing">
+        <Field name="Width means">
+          <Pills
+            fill
+            options={[
+              { value: 'duration', label: 'Duration' },
+              { value: 'engraved', label: 'Engraved' },
+            ]}
+            value={spacing ? 'engraved' : 'duration'}
+            onChange={(kind) =>
+              patchLayout({ spacing: kind === 'engraved' ? engravedSpacing() : undefined })
+            }
+          />
+        </Field>
+
+        {spacing ? (
+          <>
+            {/* Power is the one that changes everything, so it gets its own row
+                and reads out what it currently means rather than a bare number. */}
+            <Range
+              name="Duration weight"
+              display={spacingName(spacing.power)}
+              min={0}
+              max={100}
+              value={Math.round(spacing.power * 100)}
+              onChange={(v) => patchSpacing({ power: v / 100 })}
+            />
+            <div className="slider-pair">
+              <Range
+                name="Justify"
+                display={spacing.justify === 0 ? 'Ragged' : `${Math.round(spacing.justify * 100)}%`}
+                min={0}
+                max={100}
+                value={Math.round(spacing.justify * 100)}
+                onChange={(v) => patchSpacing({ justify: v / 100 })}
+              />
+              <Range
+                name="Beat width"
+                display={`${spacing.unit}`}
+                min={10}
+                max={90}
+                value={spacing.unit}
+                onChange={(unit) => patchSpacing({ unit })}
+              />
+              <Range
+                name="Crowding"
+                display={spacing.crowd.toFixed(2)}
+                min={80}
+                max={320}
+                value={Math.round(spacing.crowd * 100)}
+                onChange={(v) => patchSpacing({ crowd: v / 100 })}
+              />
+              <Range
+                name="Accidental room"
+                display={spacing.accidental.toFixed(2)}
+                min={0}
+                max={250}
+                value={Math.round(spacing.accidental * 100)}
+                onChange={(v) => patchSpacing({ accidental: v / 100 })}
+              />
+              <Range
+                name="Dot room"
+                display={spacing.dot.toFixed(2)}
+                min={0}
+                max={200}
+                value={Math.round(spacing.dot * 100)}
+                onChange={(v) => patchSpacing({ dot: v / 100 })}
+              />
+              <Range
+                name="Line opening"
+                display={spacing.prefix.toFixed(1)}
+                min={0}
+                max={120}
+                value={Math.round(spacing.prefix * 10)}
+                onChange={(v) => patchSpacing({ prefix: v / 10 })}
+              />
+            </div>
+            <p className="note-text">
+              Space per column is the gap to the next one raised to the duration
+              weight. At 100 a note's width <em>is</em> its length, which is the roll's
+              rule. Engraving sits near 53 — a whole note earns more room than a
+              quarter, nowhere near four times as much.
+            </p>
+          </>
+        ) : (
+          <p className="note-text">
+            Every note is as wide as it is long, so a held note is visibly held. The
+            honest choice while you are still learning to read rhythm — but it is not
+            how printed music spaces a bar.
+          </p>
+        )}
       </Group>
 
       <Group label="Page">

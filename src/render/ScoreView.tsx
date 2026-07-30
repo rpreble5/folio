@@ -7,6 +7,7 @@ import { NO_TEXTURE, dashArray, fontStack, lineColor, staffLineStyle } from '../
 import { buildPalette, colorForPitch } from '../core/palettes'
 import { keyAt } from '../core/types'
 import type { Layout, System } from './layout'
+import { beatToX } from './layout'
 import { NoteGlyph } from './NoteGlyph'
 import { CvdFilters, cvdFilterUrl, type CvdMode } from './cvd'
 import { TextureDefs, textureFill } from './textures'
@@ -323,8 +324,8 @@ function SystemGroup({
         beatTicks(system.startBeat, system.endBeat).map((beat) => (
           <line
             key={`grid-${beat}`}
-            x1={layout.gutter + (beat - system.startBeat) * layout.beatWidth}
-            x2={layout.gutter + (beat - system.startBeat) * layout.beatWidth}
+            x1={layout.gutter + beatToX(system, beat, layout.beatWidth)}
+            x2={layout.gutter + beatToX(system, beat, layout.beatWidth)}
             y1={0}
             y2={layout.systemInnerHeight}
             {...strokeProps(cfg.lines.beat, 'beat', surface)}

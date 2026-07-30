@@ -16,6 +16,8 @@ import { beatsPerMeasure, keyAt, timeSignatureAt } from '../core/types'
 import { diatonicIndex, isBlackKey, keyboardPosition, pitchClass, tonicOf } from '../core/pitch'
 import type { ResolvedStyle, Theme } from '../core/theme'
 import { resolveStyle } from '../core/theme'
+import type { Column, PlacedRest } from './engrave'
+import { engraveSystems, interpolateBeat } from './engrave'
 
 const NOTE_LETTERS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 
@@ -50,6 +52,12 @@ export interface System {
   height: number
   notes: PlacedNote[]
   measures: PlacedMeasure[]
+  /** Engraved mode only: the solved spacing columns. Absent on a roll. */
+  columns?: Column[]
+  /** Engraved mode only: placed rests. Absent on a roll, which has none. */
+  rests?: PlacedRest[]
+  /** Engraved mode only: x where the music starts, after clef and key. */
+  contentStart?: number
 }
 
 export interface StaffLine {
@@ -259,42 +267,60 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
   for (const system of systems) {
     system.top = top
     system.height = systemInnerHeight
-    let x = 0
-    for (const measure of measureBySystem.get(system.index) ?? []) {
-      const width = (measure.endBeat - measure.startBeat) * beatWidth
-      system.measures.push({ ...measure, x, width })
-      x += width
-    }
     top += systemInnerHeight + cfg.systemGap
   }
 
-  const systemFor = (beat: number): System | undefined =>
-    systems.find((s) => beat >= s.startBeat - 1e-6 && beat < s.endBeat - 1e-6) ??
-    (beat >= (systems.at(-1)?.endBeat ?? 0) ? systems.at(-1) : systems[0])
-
-  for (const note of score.notes) {
-    const system = systemFor(note.onset)
-    if (!system) continue
-
-    const key = keyAt(score, note.onset)
-    const style = resolveStyle(note, theme, key)
-    const x = (note.onset - system.startBeat) * beatWidth
-    // Clip a note that runs past the end of its system rather than letting it
-    // bleed into the gutter. Ties across systems are a later refinement.
-    const rawWidth = note.duration * beatWidth - cfg.noteGap
-    const maxWidth = (system.endBeat - note.onset) * beatWidth - cfg.noteGap
-    const width = Math.max(isStaff ? noteHeight : 6, Math.min(rawWidth, maxWidth))
-    const height = noteHeight * style.scale
-
-    system.notes.push({
-      note,
-      x,
-      y: yFor(axisPosition(note, theme)) - height / 2 + noteHeight / 2,
-      width: isStaff ? Math.max(width, noteHeight * 1.1) : width,
-      height,
-      style,
-      black: isBlackKey(note.midi),
+  if (cfg.spacing) {
+    // Engraved: columns, springs and rods. Fills notes, rests and measures.
+    engraveSystems({
+      score,
+      theme,
+      spacing: cfg.spacing,
+      systems,
+      measuresBySystem: measureBySystem,
+      contentWidth,
+      noteHeight,
+      yFor,
+      axisPosition: (note) => axisPosition(note, theme),
     })
+  } else {
+    for (const system of systems) {
+      let x = 0
+      for (const measure of measureBySystem.get(system.index) ?? []) {
+        const width = (measure.endBeat - measure.startBeat) * beatWidth
+        system.measures.push({ ...measure, x, width })
+        x += width
+      }
+    }
+
+    const systemFor = (beat: number): System | undefined =>
+      systems.find((s) => beat >= s.startBeat - 1e-6 && beat < s.endBeat - 1e-6) ??
+      (beat >= (systems.at(-1)?.endBeat ?? 0) ? systems.at(-1) : systems[0])
+
+    for (const note of score.notes) {
+      const system = systemFor(note.onset)
+      if (!system) continue
+
+      const key = keyAt(score, note.onset)
+      const style = resolveStyle(note, theme, key)
+      const x = (note.onset - system.startBeat) * beatWidth
+      // Clip a note that runs past the end of its system rather than letting it
+      // bleed into the gutter. Ties across systems are a later refinement.
+      const rawWidth = note.duration * beatWidth - cfg.noteGap
+      const maxWidth = (system.endBeat - note.onset) * beatWidth - cfg.noteGap
+      const width = Math.max(isStaff ? noteHeight : 6, Math.min(rawWidth, maxWidth))
+      const height = noteHeight * style.scale
+
+      system.notes.push({
+        note,
+        x,
+        y: yFor(axisPosition(note, theme)) - height / 2 + noteHeight / 2,
+        width: isStaff ? Math.max(width, noteHeight * 1.1) : width,
+        height,
+        style,
+        black: isBlackKey(note.midi),
+      })
+    }
   }
 
   // --- Backdrop ------------------------------------------------------------
@@ -374,6 +400,20 @@ function midiForAxis(pos: number, theme: Theme): number {
   }
 }
 
+/**
+ * Beat → x within a system.
+ *
+ * The one place that knows how the two engines differ. On a roll it is a
+ * multiplication; engraved, it interpolates between solved columns, because beat
+ * position and pixel position are no longer proportional. Everything that needs
+ * to draw at a moment in time — the playhead, the beat grid — goes through here
+ * rather than reaching for beatWidth, which is only meaningful on a roll.
+ */
+export function beatToX(system: System, beat: number, beatWidth: number): number {
+  if (system.columns) return interpolateBeat(system.columns, beat)
+  return (beat - system.startBeat) * beatWidth
+}
+
 /** Locate the playhead: which system, and how far across it. */
 export function playheadAt(
   layout: Layout,
@@ -381,12 +421,12 @@ export function playheadAt(
 ): { system: System; x: number } | null {
   for (const system of layout.systems) {
     if (beat >= system.startBeat - 1e-6 && beat < system.endBeat - 1e-6) {
-      return { system, x: (beat - system.startBeat) * layout.beatWidth }
+      return { system, x: beatToX(system, beat, layout.beatWidth) }
     }
   }
   const last = layout.systems.at(-1)
   if (last && beat >= last.endBeat) {
-    return { system: last, x: (last.endBeat - last.startBeat) * layout.beatWidth }
+    return { system: last, x: beatToX(last, last.endBeat, layout.beatWidth) }
   }
   return null
 }

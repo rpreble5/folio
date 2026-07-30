@@ -281,9 +281,54 @@ export const ANCHOR_OPTIONS: { id: AnchorOn; label: string }[] = [
   { id: 'tonic', label: 'Key note' },
 ]
 
+/**
+ * How horizontal space is allotted.
+ *
+ * The roll's rule is that a column's width is its duration, exactly. Engraved
+ * notation's rule is that width grows with duration but far more slowly — a
+ * whole note gets more room than a quarter, nowhere near four times as much.
+ *
+ * Those turn out to be the same rule at two settings of one exponent:
+ *
+ *     space ∝ gap ^ power
+ *
+ * `power` 1 is strict proportion, which is the roll. 0 gives every column the
+ * same room whatever it holds. Traditional engraving sits near 0.5 — a power of
+ * 0.53 reproduces the spacing tables in Gould and Ross to within a few percent
+ * across the whole range from a breve to a thirty-second. So this is one
+ * continuous control whose ends are both meaningful, rather than two modes.
+ *
+ * The rest is the springs-and-rods model engravers describe: `spring` is the
+ * stretchable duration-derived space, and the rods are the fixed widths that
+ * glyphs need whatever the tempo — an accidental before the head, a dot after
+ * it, the head itself. Justification stretches the springs and leaves the rods
+ * alone, which is why a crowded bar stays legible when a line is stretched.
+ */
+export interface SpacingConfig {
+  /** 1 = width is duration (the roll). ~0.53 = engraved. 0 = every column equal. */
+  power: number
+  /** Pixels for a one-beat column before justification. A target, not a floor. */
+  unit: number
+  /** Fixed room before a head that carries an accidental, in head widths. */
+  accidental: number
+  /** Fixed room after a head that carries augmentation dots, in head widths. */
+  dot: number
+  /** Room for the clef, key and time signature at the head of a system. */
+  prefix: number
+  /** 0 leaves systems ragged. 1 stretches each one to the full page width. */
+  justify: number
+  /** Least gap between adjacent heads, in head widths. The rod that always applies. */
+  crowd: number
+}
+
 export interface LayoutConfig {
   mode: LayoutMode
   pitchAxis: PitchAxis
+  /**
+   * Present and engraved-spaced, or absent and proportional. Absent on every
+   * roll preset, so the roll's placement code is never even reached.
+   */
+  spacing?: SpacingConfig
   /**
    * How many bars fill one line. Zero means auto, which picks whichever count
    * lands nearest {@link beatWidth}. Pixels-per-beat is always derived from
@@ -339,6 +384,17 @@ export const STAFF_LINE_NAMES = [
 ]
 
 export const emptyStaffStyle = (): StaffStyle => ({ lines: {}, spaces: {} })
+
+/** Engraved spacing as published convention has it. The point to depart from. */
+export const engravedSpacing = (): SpacingConfig => ({
+  power: 0.53,
+  unit: 34,
+  accidental: 1.05,
+  dot: 0.55,
+  prefix: 4.2,
+  justify: 1,
+  crowd: 1.35,
+})
 
 /** A line's effective style: the shared one, with any per-line override on top. */
 export function staffLineStyle(staff: StaffStyle, index: number, base: LineStyle): LineStyle {
