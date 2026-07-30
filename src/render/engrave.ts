@@ -34,6 +34,7 @@ import type { SpacingConfig, Theme } from '../core/theme'
 import { resolveStyle } from '../core/theme'
 import { isBlackKey } from '../core/pitch'
 import type { Measure, PlacedNote, System } from './layout'
+import { HEAD_WIDTH, middleIndexFor } from './notation'
 
 /** One moment in time, and everything that begins at it. */
 export interface Column {
@@ -66,6 +67,8 @@ export interface EngraveInput {
   /** Width available for music, gutter and right pad already removed. */
   contentWidth: number
   noteHeight: number
+  /** Pixels per staff space. Two diatonic steps make one. */
+  space: number
   /** Vertical placement, shared with the proportional engine. */
   yFor: (axisPosition: number) => number
   axisPosition: (note: NoteEvent) => number
@@ -119,9 +122,11 @@ function prefixWidth(
  * them, so the two are interchangeable from the caller's side.
  */
 export function engraveSystems(input: EngraveInput): void {
-  const { score, spacing, systems, measuresBySystem, contentWidth, noteHeight } = input
+  const { score, spacing, systems, measuresBySystem, contentWidth, space } = input
 
-  const headWidth = noteHeight * 1.24
+  // From the glyph, not from the lane height: the rods that keep two heads clear
+  // of each other have to be the width of an actual head.
+  const headWidth = space * HEAD_WIDTH
   const notesByBeat = groupByBeat(score.notes, (n) => n.onset)
   const restsByBeat = groupByBeat(score.rests ?? [], (r) => r.onset)
 
@@ -306,29 +311,6 @@ function restIndex(rest: RestEvent, clef: ClefMark): number {
   if (rest.displayIndex !== undefined) return rest.displayIndex
   // Middle line of a staff: two lines above its lowest, in diatonic steps.
   return middleIndexFor(clef)
-}
-
-/**
- * Diatonic index of a clef's middle staff line.
- *
- * A clef names one pitch and pins it to one line, so the middle line is that
- * pitch stepped by the distance from the clef's line to line three.
- */
-export function middleIndexFor(clef: ClefMark): number {
-  const pinned = CLEF_PITCH[clef.sign] + clef.octaveChange * 7
-  return pinned + (3 - clef.line) * 2
-}
-
-/** The diatonic index each clef sign names, at its own line. */
-const CLEF_PITCH: Record<ClefMark['sign'], number> = {
-  // G4 = octave 4 × 7 + step index of G (4).
-  G: 4 * 7 + 4,
-  // F3 = octave 3 × 7 + step index of F (3).
-  F: 3 * 7 + 3,
-  // C4.
-  C: 4 * 7 + 0,
-  percussion: 4 * 7 + 0,
-  TAB: 4 * 7 + 0,
 }
 
 function placeRests(

@@ -8,7 +8,7 @@
  */
 
 import type { LineSet, LineStyle, Surface, TextureConfig, Theme, TrailConfig } from './theme'
-import { NO_TEXTURE, emptyStaffStyle, makeSurface } from './theme'
+import { NO_TEXTURE, emptyStaffStyle, engravedSpacing, fullNotation, makeSurface } from './theme'
 
 /** Trail shapes worth starting from. A capsule bar is just the first of these. */
 export const TRAIL_PRESETS: { id: string; name: string; trail: TrailConfig }[] = [
@@ -321,6 +321,76 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       outlineWhat: 'accidentals',
       outlineStyle: 'hollow',
       trail: trailOf('ribbon'),
+      texture: texture(),
+      trailGrain: false,
+    },
+    surface: { ...PAPER_SURFACE },
+    rules: [],
+  },
+  {
+    id: 'engraved',
+    name: 'Engraved',
+    description:
+      'Printed sheet music, reproduced: engraved spacing, real noteheads, stems, beams, rests, clefs. Everything here is a switch, so this is where you start if you want the page you already know — then change one thing at a time.',
+    accessible: 'Print ready',
+    layout: {
+      ...baseLayout,
+      mode: 'staff',
+      pitchAxis: 'diatonic',
+      laneHeight: 6,
+      // Ignored in engraved mode, where spacing.unit sets the scale, but kept
+      // sane so switching back to proportional does not land somewhere absurd.
+      beatWidth: 46,
+      barsPerSystem: 0,
+      cornerRadius: 0,
+      showKeyboard: false,
+      showBlackKeyRows: false,
+      showMeasureNumbers: true,
+      // Printed weights: staff lines are hairlines and barlines match them, both
+      // in ink. The default '@auto' resolves to the page's grid grey, which is
+      // right for a roll's scaffolding and wrong for a staff — on paper it made
+      // the barlines read as fainter than the staff they cross.
+      lines: {
+        beat: line({ show: false }),
+        bar: line({ width: 1.1, color: '#15181f' }),
+        anchor: line({ show: false }),
+        staff: line({ width: 1.1, color: '#15181f' }),
+        ledger: line({ width: 1.1, color: '#15181f' }),
+      },
+      anchorOn: 'none' as const,
+      spacing: engravedSpacing(),
+      notation: fullNotation(),
+    },
+    encodings: {
+      // Ink, not colour. A printed page is the baseline, and every colour axis
+      // is off rather than absent — so turning one on is one control away.
+      // Ink, via the achromatic channel rather than a special case: every one of
+      // the twelve slots is anchored dark. Setting a single slot back to 'none'
+      // gives that pitch its hue and leaves the rest of the page printed — which
+      // is the "one purple note on a normal page" case, with no new machinery.
+      color: { source: 'pitch', order: 'chromatic', tone: 'deep', rotate: 0,
+        basis: 'pitchClass', accidentalShade: 'same',
+        lightnessBy: 'none', lightnessSpread: 0,
+        saturation: 0, chromaBy: 'none', chromaSpread: 0,
+        achromatic: Array<'dark'>(12).fill('dark') },
+      shapeSet: 'classic',
+      label: 'none',
+      labelScale: 1,
+      labelOn: 'all',
+      labelFont: 'serif',
+      labelWeight: 600,
+      labelOpacity: 1,
+      labelCase: 'as-is',
+      labelPlace: 'above',
+      labelTracking: 0,
+      labelInk: 'contrast',
+      labelTint: 0.3,
+      labelTintDir: 'auto',
+      sizeByVelocity: false,
+      // The heads carry it: a half note is hollow because it is written as one.
+      outlineWhat: 'writtenLong',
+      outlineStyle: 'hollow',
+      trail: trailOf('none'),
       texture: texture(),
       trailGrain: false,
     },

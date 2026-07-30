@@ -85,6 +85,7 @@ export type StudioTab =
   | 'marks'
   | 'labels'
   | 'staff'
+  | 'notation'
   | 'page'
 
 interface State {

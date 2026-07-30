@@ -321,6 +321,42 @@ export interface SpacingConfig {
   crowd: number
 }
 
+/**
+ * Which pieces of traditional notation to draw.
+ *
+ * Every one is a switch because that is the point of the app: reproducing a
+ * printed page is the starting position, not the destination. A reader who has
+ * learned to see rhythm in the beams can turn the beams off; one who never wants
+ * a stem can drop them and keep the authentic heads; one who wants a printed
+ * page with a single purple note changes nothing here at all.
+ *
+ * They compose with the visual channels rather than replacing them. A stem takes
+ * its colour from the note it belongs to, so recolouring by pitch recolours the
+ * stems too — which is either exactly right or exactly wrong depending on taste,
+ * hence `inkFollowsNote`.
+ */
+export interface NotationConfig {
+  /** Authentic noteheads, in place of whatever the shape channel says. */
+  heads: boolean
+  stems: boolean
+  beams: boolean
+  flags: boolean
+  dots: boolean
+  accidentals: boolean
+  rests: boolean
+  clef: boolean
+  keySignature: boolean
+  timeSignature: boolean
+  /** Stem and beam thickness, in staff spaces. Engraving uses about 0.12. */
+  weight: number
+  /** Beam thickness, in staff spaces. Engraving uses half a space. */
+  beamWeight: number
+  /** Stems and beams in the note's own colour, rather than the page's ink. */
+  inkFollowsNote: boolean
+  /** Opacity for the furniture, so it can sit behind the colour rather than over it. */
+  opacity: number
+}
+
 export interface LayoutConfig {
   mode: LayoutMode
   pitchAxis: PitchAxis
@@ -329,6 +365,8 @@ export interface LayoutConfig {
    * roll preset, so the roll's placement code is never even reached.
    */
   spacing?: SpacingConfig
+  /** Present and traditional notation is drawn. Absent on every roll preset. */
+  notation?: NotationConfig
   /**
    * How many bars fill one line. Zero means auto, which picks whichever count
    * lands nearest {@link beatWidth}. Pixels-per-beat is always derived from
@@ -384,6 +422,24 @@ export const STAFF_LINE_NAMES = [
 ]
 
 export const emptyStaffStyle = (): StaffStyle => ({ lines: {}, spaces: {} })
+
+/** Everything on, at engraving's own weights. A printed page, to depart from. */
+export const fullNotation = (): NotationConfig => ({
+  heads: true,
+  stems: true,
+  beams: true,
+  flags: true,
+  dots: true,
+  accidentals: true,
+  rests: true,
+  clef: true,
+  keySignature: true,
+  timeSignature: true,
+  weight: 0.12,
+  beamWeight: 0.5,
+  inkFollowsNote: true,
+  opacity: 1,
+})
 
 /** Engraved spacing as published convention has it. The point to depart from. */
 export const engravedSpacing = (): SpacingConfig => ({

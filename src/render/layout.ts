@@ -280,6 +280,7 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
       measuresBySystem: measureBySystem,
       contentWidth,
       noteHeight,
+      space: laneHeight * 2,
       yFor,
       axisPosition: (note) => axisPosition(note, theme),
     })

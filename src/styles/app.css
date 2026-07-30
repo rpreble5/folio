@@ -386,10 +386,9 @@ button {
     gap: var(--gap);
   }
 
-  /* Narrower so three still fit across the column. At 140px only two did, which
-     cost the Styles tab a whole extra row of tiles. */
+  /* Narrower again so four still fit once the column itself shrinks. */
   .tiles .preset-tile {
-    width: 116px;
+    width: 93px;
   }
 
   .tiles .preset-tile .tile__name {
@@ -1204,17 +1203,20 @@ button {
 /* Preset tiles are the front door, so they get more presence — but not so much
    height that the rest of the tab has to scroll to reach it. */
 .preset-tile {
-  /* Sized so three fit across the Styles column rather than two. At 148px the
-     six presets took three rows and made Styles the tallest tab; at 140 they
-     take two. */
-  width: 140px;
+  /* Sized so *four* fit across the Styles column. The count is what matters, not
+     the width: at 140px three fit, which was two rows for six presets and three
+     rows the moment an eighth was added — and a third row is what pushes Styles
+     past the panel. 112px missed a fourth tile by 9px in a 463px column, which is
+     the whole difference between two rows and three. Re-check when a preset is
+     added: four across, or it overflows. */
+  width: 106px;
   gap: 9px;
   padding: 11px;
 }
 
 .preset-tile .tile__swatches i {
   width: 100%;
-  height: 17px;
+  height: 15px;
 }
 
 .preset-tile .tile__swatches {

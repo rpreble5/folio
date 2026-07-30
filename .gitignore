@@ -11,3 +11,5 @@ dist
 .restcheck.mjs
 .spacecheck.mjs
 .glyphcheck.mjs
+.beamcheck.mjs
+.tilecheck.mjs

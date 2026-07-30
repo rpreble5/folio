@@ -9,6 +9,7 @@ import { keyAt } from '../core/types'
 import type { Layout, System } from './layout'
 import { beatToX } from './layout'
 import { NoteGlyph } from './NoteGlyph'
+import { NotationLayer, headGlyphFor } from './NotationLayer'
 import { CvdFilters, cvdFilterUrl, type CvdMode } from './cvd'
 import { TextureDefs, textureFill } from './textures'
 
@@ -116,6 +117,20 @@ export function ScoreView({
     return keys.sort((a, b) => Number(a.black) - Number(b.black))
   }, [layout, cfg.showKeyboard, cfg.pitchAxis, isStaff])
 
+  /**
+   * Which staves this score uses.
+   *
+   * Clefs say so when the file had them. Otherwise fall back to the hands: a
+   * piece with anything in the left hand is a grand staff, one without is a
+   * single staff, and drawing a bass clef under a treble-only piece would be
+   * inventing a staff the music does not use.
+   */
+  const staves = useMemo(() => {
+    const fromClefs = new Set((score.clefs ?? []).map((c) => c.staff))
+    if (fromClefs.size) return Array.from(fromClefs).sort((a, b) => a - b)
+    return score.notes.some((n) => n.hand === 'left') ? [1, 2] : [1]
+  }, [score])
+
   const filter = cvdFilterUrl(cvd)
   const pageFill = textureFill(cfg.pageTexture)
 
@@ -174,6 +189,7 @@ export function ScoreView({
                 // slot is left alone. Keying by slot alone would update in place
                 // and the swap would be a hard cut.
                 key={slots ? `slot-${y}-${system.index}` : system.index}
+                score={score}
                 system={system}
                 top={y}
                 theme={theme}
@@ -187,6 +203,7 @@ export function ScoreView({
                 yFor={yFor}
                 isStaff={isStaff}
                 staffLineColors={staffLineColors}
+                staves={staves}
               />
             )
           })}
@@ -196,6 +213,7 @@ export function ScoreView({
 }
 
 interface SystemProps {
+  score: Score
   system: System
   /** Where to draw it, which is the system's own top everywhere but Read. */
   top: number
@@ -210,9 +228,12 @@ interface SystemProps {
   yFor: (pos: number) => number
   isStaff: boolean
   staffLineColors: string[]
+  /** Staff numbers the score actually uses, so each gets its own line opening. */
+  staves: number[]
 }
 
 function SystemGroup({
+  score,
   system,
   top,
   theme,
@@ -226,14 +247,25 @@ function SystemGroup({
   yFor,
   isStaff,
   staffLineColors,
+  staves,
 }: SystemProps) {
   const { surface, layout: cfg, encodings } = theme
-  const systemWidth = (system.endBeat - system.startBeat) * layout.beatWidth
+  // An engraved system spans the page rather than a beat count: its last column
+  // sits at the right edge by construction, so that is the width.
+  const systemWidth = system.columns
+    ? (system.columns.at(-1)?.x ?? 0)
+    : (system.endBeat - system.startBeat) * layout.beatWidth
   const inSystem =
     playheadBeat >= system.startBeat - 1e-6 && playheadBeat < system.endBeat - 1e-6
-  const playheadX = (playheadBeat - system.startBeat) * layout.beatWidth
+  const playheadX = beatToX(system, playheadBeat, layout.beatWidth)
 
   const labelSize = Math.max(7, Math.min(layout.noteHeight * 0.62, 13)) * encodings.labelScale
+
+  // One staff space is two diatonic steps, which is what every glyph is drawn
+  // against. Everything notation-side scales off this single number.
+  const space = layout.laneHeight * 2
+  const notation = cfg.notation
+  const headGlyph = notation?.heads ? headGlyphFor : null
 
   return (
     <g transform={`translate(0, ${top})`} data-slot={system.index}>
@@ -334,15 +366,18 @@ function SystemGroup({
 
       {/* Barlines and measure numbers */}
       {cfg.lines.bar.show &&
-        system.measures.map((measure) => (
+        system.measures.map((measure, i) => (
           <g key={`bar-${measure.index}`}>
-            <line
+            {/* No barline at the start of a system: a staff simply begins, and a
+                line there reads as a repeat sign or a double bar. The line at the
+                system's right edge closes it instead. */}
+            {!(i === 0 && system.columns) && <line
               x1={layout.gutter + measure.x}
               x2={layout.gutter + measure.x}
               y1={-4}
               y2={layout.systemInnerHeight + 4}
               {...strokeProps(cfg.lines.bar, 'bar', surface)}
-            />
+            />}
             {cfg.showMeasureNumbers && (
               <text
                 x={layout.gutter + measure.x + 5}
@@ -427,6 +462,17 @@ function SystemGroup({
               }}
               style={{ cursor: 'pointer' }}
             >
+              {headGlyph?.(placed) ? (
+                <path
+                  className="score__head"
+                  d={headGlyph(placed)!.path}
+                  transform={`translate(${placed.x}, ${placed.y + placed.height / 2}) scale(${space})`}
+                  fill={placed.style.filled ? placed.style.fill : 'none'}
+                  stroke={placed.style.filled ? 'none' : placed.style.fill}
+                  strokeWidth={placed.style.filled ? 0 : 0.09}
+                  opacity={placed.style.opacity}
+                />
+              ) : (
               <NoteGlyph
                 x={placed.x}
                 y={placed.y}
@@ -447,6 +493,7 @@ function SystemGroup({
                 texture={encodings.texture}
                 trailGrain={encodings.trailGrain}
               />
+              )}
               {placed.style.labelText && (
                 <text
                   x={placed.x + Math.min(placed.height, placed.width) / 2}
@@ -471,6 +518,21 @@ function SystemGroup({
           )
         })}
       </g>
+
+      {/* Traditional notation: stems, beams, flags, rests, clef, key, time. */}
+      {notation && system.columns && (
+        <NotationLayer
+          score={score}
+          system={system}
+          notation={notation}
+          space={space}
+          gutter={layout.gutter}
+          yFor={yFor}
+          noteHeight={layout.noteHeight}
+          surface={surface}
+          staves={staves}
+        />
+      )}
 
       {/* Playhead */}
       {inSystem && (

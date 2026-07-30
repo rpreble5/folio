@@ -50,6 +50,7 @@ import {
   TINT_DIRS,
   OUTLINE_TARGETS,
   engravedSpacing,
+  fullNotation,
   TEXTURE_KINDS,
   contrastRatio,
   describeSelector,
@@ -60,6 +61,7 @@ import {
   type LabelOn,
   type LineRole,
   type LineStyle,
+  type NotationConfig,
   type OutlineWhat,
   type SpacingConfig,
   type TintDir,
@@ -92,6 +94,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'marks', label: 'Marks' },
   { id: 'labels', label: 'Labels' },
   { id: 'staff', label: 'Staff' },
+  { id: 'notation', label: 'Notation' },
   { id: 'page', label: 'Page' },
 ]
 
@@ -156,6 +159,7 @@ export function StudioPanel() {
         {tab === 'marks' && <MarksTab />}
         {tab === 'labels' && <LabelsTab />}
         {tab === 'staff' && <StaffTab />}
+        {tab === 'notation' && <NotationTab />}
         {tab === 'page' && <PageTab />}
       </div>
     </section>
@@ -1259,18 +1263,270 @@ function StaffTab() {
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+
+/**
+ * Notation: how much of a printed page to draw.
+ *
+ * Its own tab because it is its own question, and a large one — ten switches and
+ * four weights would have pushed the Page tab into a scrollbar, and a control
+ * that has to be scrolled to is a control nobody finds.
+ *
+ * Ordered by how much each piece changes the page. Spacing first, because it
+ * decides whether this is a printed bar or a piano roll at all; then the marks
+ * that carry rhythm; then the ones that carry pitch; then weights.
+ */
+function NotationTab() {
+  const theme = useStore((s) => s.theme)
+  const patchLayout = useStore((s) => s.patchLayout)
+  const { layout } = theme
+  const spacing = layout.spacing
+  const notation = layout.notation
+
+  const patchSpacing = (patch: Partial<SpacingConfig>) => {
+    if (!spacing) return
+    patchLayout({ spacing: { ...spacing, ...patch } })
+  }
+  const patchNotation = (patch: Partial<NotationConfig>) => {
+    if (!notation) return
+    patchLayout({ notation: { ...notation, ...patch } })
+  }
+
+  return (
+    <div className="columns columns--4">
+      <Group label="Spacing">
+        <Field name="Width means">
+          <Pills
+            fill
+            options={[
+              { value: 'duration', label: 'Duration' },
+              { value: 'engraved', label: 'Engraved' },
+            ]}
+            value={spacing ? 'engraved' : 'duration'}
+            onChange={(kind) =>
+              patchLayout({ spacing: kind === 'engraved' ? engravedSpacing() : undefined })
+            }
+          />
+        </Field>
+
+        {spacing ? (
+          <>
+            {/* Power is the one that changes everything, so it gets its own row
+                and reads out what it currently means rather than a bare number. */}
+            <Range
+              name="Duration weight"
+              display={spacingName(spacing.power)}
+              min={0}
+              max={100}
+              value={Math.round(spacing.power * 100)}
+              onChange={(v) => patchSpacing({ power: v / 100 })}
+            />
+            <div className="slider-pair">
+              <Range
+                name="Justify"
+                display={spacing.justify === 0 ? 'Ragged' : `${Math.round(spacing.justify * 100)}%`}
+                min={0}
+                max={100}
+                value={Math.round(spacing.justify * 100)}
+                onChange={(v) => patchSpacing({ justify: v / 100 })}
+              />
+              <Range
+                name="Beat width"
+                display={`${spacing.unit}`}
+                min={10}
+                max={90}
+                value={spacing.unit}
+                onChange={(unit) => patchSpacing({ unit })}
+              />
+            </div>
+            <p className="note-text">
+              At 100 a note's width <em>is</em> its length — the roll's rule. Engraving
+              sits near 53: a whole note earns more room than a quarter, nowhere near
+              four times as much.
+            </p>
+          </>
+        ) : (
+          <p className="note-text">
+            Every note is as wide as it is long, so a held note is visibly held. The
+            honest choice while you are still learning to read rhythm — but it is not
+            how printed music spaces a bar.
+          </p>
+        )}
+      </Group>
+
+      <Group label="Rhythm">
+        <Field name="Draw">
+          <Pills
+            fill
+            options={[
+              { value: 'off', label: 'Nothing' },
+              { value: 'on', label: 'Printed page' },
+            ]}
+            value={notation ? 'on' : 'off'}
+            onChange={(kind) =>
+              patchLayout({ notation: kind === 'on' ? fullNotation() : undefined })
+            }
+          />
+        </Field>
+
+        {notation ? (
+          <>
+            <Switch
+              label="Real noteheads"
+              checked={notation.heads}
+              onChange={(heads) => patchNotation({ heads })}
+            />
+            <Switch
+              label="Stems"
+              checked={notation.stems}
+              onChange={(stems) => patchNotation({ stems })}
+            />
+            <Switch
+              label="Beams"
+              checked={notation.beams}
+              onChange={(beams) => patchNotation({ beams })}
+            />
+            <Switch
+              label="Flags"
+              checked={notation.flags}
+              onChange={(flags) => patchNotation({ flags })}
+            />
+            <Switch
+              label="Rests"
+              checked={notation.rests}
+              onChange={(rests) => patchNotation({ rests })}
+            />
+            <Switch
+              label="Dots"
+              checked={notation.dots}
+              onChange={(dots) => patchNotation({ dots })}
+            />
+          </>
+        ) : (
+          <p className="note-text">
+            No stems, no rests, no clef — pitch and length carry everything, which is
+            the reading this app exists to offer. Turn it on for the page you already
+            know, then take pieces away one at a time.
+          </p>
+        )}
+      </Group>
+
+      {notation && (
+        <Group label="Pitch & page">
+          <Switch
+            label="Accidentals"
+            checked={notation.accidentals}
+            onChange={(accidentals) => patchNotation({ accidentals })}
+          />
+          <Switch
+            label="Clef"
+            checked={notation.clef}
+            onChange={(clef) => patchNotation({ clef })}
+          />
+          <Switch
+            label="Key signature"
+            checked={notation.keySignature}
+            onChange={(keySignature) => patchNotation({ keySignature })}
+          />
+          <Switch
+            label="Time signature"
+            checked={notation.timeSignature}
+            onChange={(timeSignature) => patchNotation({ timeSignature })}
+          />
+          <Switch
+            label="Follows note colour"
+            checked={notation.inkFollowsNote}
+            onChange={(inkFollowsNote) => patchNotation({ inkFollowsNote })}
+          />
+        </Group>
+      )}
+
+      {/* The rods live here rather than under Spacing: they are the fixed widths
+          glyphs need, so they belong beside the glyph weights, and Spacing stays
+          the two controls that actually change how a bar reads. */}
+      <Group label="Fine tuning">
+        <div className="slider-pair">
+          {spacing && (
+            <>
+              <Range
+                name="Crowding"
+                display={spacing.crowd.toFixed(2)}
+                min={80}
+                max={320}
+                value={Math.round(spacing.crowd * 100)}
+                onChange={(v) => patchSpacing({ crowd: v / 100 })}
+              />
+              <Range
+                name="Accidental room"
+                display={spacing.accidental.toFixed(2)}
+                min={0}
+                max={250}
+                value={Math.round(spacing.accidental * 100)}
+                onChange={(v) => patchSpacing({ accidental: v / 100 })}
+              />
+              <Range
+                name="Dot room"
+                display={spacing.dot.toFixed(2)}
+                min={0}
+                max={200}
+                value={Math.round(spacing.dot * 100)}
+                onChange={(v) => patchSpacing({ dot: v / 100 })}
+              />
+              <Range
+                name="Line opening"
+                display={spacing.prefix.toFixed(1)}
+                min={0}
+                max={120}
+                value={Math.round(spacing.prefix * 10)}
+                onChange={(v) => patchSpacing({ prefix: v / 10 })}
+              />
+            </>
+          )}
+          {notation && (
+            <>
+            <Range
+              name="Stem weight"
+              display={notation.weight.toFixed(2)}
+              min={4}
+              max={40}
+              value={Math.round(notation.weight * 100)}
+              onChange={(v) => patchNotation({ weight: v / 100 })}
+            />
+            <Range
+              name="Beam weight"
+              display={notation.beamWeight.toFixed(2)}
+              min={10}
+              max={110}
+              value={Math.round(notation.beamWeight * 100)}
+              onChange={(v) => patchNotation({ beamWeight: v / 100 })}
+            />
+            <Range
+              name="Furniture opacity"
+              display={`${Math.round(notation.opacity * 100)}%`}
+              min={10}
+              max={100}
+              value={Math.round(notation.opacity * 100)}
+              onChange={(v) => patchNotation({ opacity: v / 100 })}
+            />
+            </>
+          )}
+        </div>
+        <p className="note-text">
+          All in staff spaces, so they hold at any staff size. Engraving uses 0.12 for a
+          stem and 0.50 for a beam.
+        </p>
+      </Group>
+    </div>
+  )
+}
+
+
 function PageTab() {
   const theme = useStore((s) => s.theme)
   const patchLayout = useStore((s) => s.patchLayout)
   const setPage = useStore((s) => s.setPage)
   const { layout } = theme
   const isRoll = layout.mode === 'roll'
-  const spacing = layout.spacing
-
-  const patchSpacing = (patch: Partial<SpacingConfig>) => {
-    if (!spacing) return
-    patchLayout({ spacing: { ...spacing, ...patch } })
-  }
 
   return (
     <div className="columns columns--3">
@@ -1347,99 +1603,6 @@ function PageTab() {
         onChange={(systemGap) => patchLayout({ systemGap })}
       />
         </div>
-      </Group>
-
-      <Group label="Spacing">
-        <Field name="Width means">
-          <Pills
-            fill
-            options={[
-              { value: 'duration', label: 'Duration' },
-              { value: 'engraved', label: 'Engraved' },
-            ]}
-            value={spacing ? 'engraved' : 'duration'}
-            onChange={(kind) =>
-              patchLayout({ spacing: kind === 'engraved' ? engravedSpacing() : undefined })
-            }
-          />
-        </Field>
-
-        {spacing ? (
-          <>
-            {/* Power is the one that changes everything, so it gets its own row
-                and reads out what it currently means rather than a bare number. */}
-            <Range
-              name="Duration weight"
-              display={spacingName(spacing.power)}
-              min={0}
-              max={100}
-              value={Math.round(spacing.power * 100)}
-              onChange={(v) => patchSpacing({ power: v / 100 })}
-            />
-            <div className="slider-pair">
-              <Range
-                name="Justify"
-                display={spacing.justify === 0 ? 'Ragged' : `${Math.round(spacing.justify * 100)}%`}
-                min={0}
-                max={100}
-                value={Math.round(spacing.justify * 100)}
-                onChange={(v) => patchSpacing({ justify: v / 100 })}
-              />
-              <Range
-                name="Beat width"
-                display={`${spacing.unit}`}
-                min={10}
-                max={90}
-                value={spacing.unit}
-                onChange={(unit) => patchSpacing({ unit })}
-              />
-              <Range
-                name="Crowding"
-                display={spacing.crowd.toFixed(2)}
-                min={80}
-                max={320}
-                value={Math.round(spacing.crowd * 100)}
-                onChange={(v) => patchSpacing({ crowd: v / 100 })}
-              />
-              <Range
-                name="Accidental room"
-                display={spacing.accidental.toFixed(2)}
-                min={0}
-                max={250}
-                value={Math.round(spacing.accidental * 100)}
-                onChange={(v) => patchSpacing({ accidental: v / 100 })}
-              />
-              <Range
-                name="Dot room"
-                display={spacing.dot.toFixed(2)}
-                min={0}
-                max={200}
-                value={Math.round(spacing.dot * 100)}
-                onChange={(v) => patchSpacing({ dot: v / 100 })}
-              />
-              <Range
-                name="Line opening"
-                display={spacing.prefix.toFixed(1)}
-                min={0}
-                max={120}
-                value={Math.round(spacing.prefix * 10)}
-                onChange={(v) => patchSpacing({ prefix: v / 10 })}
-              />
-            </div>
-            <p className="note-text">
-              Space per column is the gap to the next one raised to the duration
-              weight. At 100 a note's width <em>is</em> its length, which is the roll's
-              rule. Engraving sits near 53 — a whole note earns more room than a
-              quarter, nowhere near four times as much.
-            </p>
-          </>
-        ) : (
-          <p className="note-text">
-            Every note is as wide as it is long, so a held note is visibly held. The
-            honest choice while you are still learning to read rhythm — but it is not
-            how printed music spaces a bar.
-          </p>
-        )}
       </Group>
 
       <Group label="Page">
