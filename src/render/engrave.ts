@@ -32,9 +32,17 @@ import type { ClefMark, NoteEvent, RestEvent, Score } from '../core/types'
 import { clefAt, keyAt } from '../core/types'
 import type { SpacingConfig, Theme } from '../core/theme'
 import { resolveStyle } from '../core/theme'
-import { isBlackKey } from '../core/pitch'
+import { diatonicIndex, isBlackKey } from '../core/pitch'
 import type { Measure, PlacedNote, System } from './layout'
-import { HEAD_WIDTH, middleIndexFor } from './notation'
+import { ACCIDENTAL_GLYPHS } from './glyphs'
+import {
+  HEAD_WIDTH,
+  clusterUp,
+  clustersOf,
+  layoutHeads,
+  middleIndexFor,
+  stackAccidentals,
+} from './notation'
 
 /** One moment in time, and everything that begins at it. */
 export interface Column {
@@ -132,7 +140,7 @@ export function engraveSystems(input: EngraveInput): void {
 
   for (const system of systems) {
     const measures = measuresBySystem.get(system.index) ?? []
-    const columns = buildColumns(system, notesByBeat, restsByBeat, spacing, headWidth)
+    const columns = buildColumns(system, notesByBeat, restsByBeat, spacing, headWidth, input)
     const prefix = prefixWidth(score, system, spacing, headWidth)
 
     solve(columns, prefix, contentWidth, spacing)
@@ -141,11 +149,48 @@ export function engraveSystems(input: EngraveInput): void {
     system.contentStart = prefix
 
     placeNotes(system, columns, notesByBeat, input, headWidth)
+    displaceSeconds(system, input, headWidth)
     // Measures before rests: a whole-bar rest is centred in its bar, so it needs
     // the bar's edges to already be known.
     placeMeasures(system, columns, measures, contentWidth)
     placeRests(system, columns, restsByBeat, score, input)
   }
+}
+
+/**
+ * How much room a column's accidentals need.
+ *
+ * Runs the same packer the renderer uses, so the space reserved and the space
+ * used are the same number by construction rather than by a matching pair of
+ * guesses. `spacing.accidental` scales the result, so the control still works —
+ * it just now scales something true.
+ *
+ * A displaced head also pushes the stack further left, so a column containing a
+ * second gets one head width more.
+ */
+function accidentalLead(
+  notes: NoteEvent[],
+  spacing: SpacingConfig,
+  headWidth: number,
+  input: EngraveInput,
+): number {
+  const entries = notes.flatMap((note) => {
+    const name = note.notated?.accidental
+    const glyph = name ? ACCIDENTAL_GLYPHS[name] : undefined
+    if (!glyph || !name) return []
+    return [{
+      noteId: note.id,
+      y: input.yFor(input.axisPosition(note)),
+      box: { glyph: name, width: glyph.width, top: glyph.top, bottom: glyph.bottom },
+    }]
+  })
+  if (entries.length === 0) return 0
+
+  const { width } = stackAccidentals(entries, input.space, 0)
+  const indices = notes.map((n) => diatonicIndex(n.spelling)).sort((a, b) => a - b)
+  const hasSecond = indices.some((v, i) => i > 0 && v - indices[i - 1] === 1)
+
+  return (width + (hasSecond ? headWidth : 0)) * spacing.accidental
 }
 
 function groupByBeat<T>(items: T[], onsetOf: (item: T) => number): Map<number, T[]> {
@@ -173,6 +218,7 @@ function buildColumns(
   restsByBeat: Map<number, RestEvent[]>,
   spacing: SpacingConfig,
   headWidth: number,
+  input: EngraveInput,
 ): Column[] {
   const beats = new Set<number>()
   const inSystem = (beat: number) =>
@@ -186,9 +232,11 @@ function buildColumns(
     const notes = notesByBeat.get(beat) ?? []
     const rests = restsByBeat.get(beat) ?? []
 
-    // An accidental anywhere in the column pushes the whole column right: the
-    // heads stay aligned, and the symbols stack into the room made for them.
-    const hasAccidental = notes.some((n) => n.notated?.accidental)
+    // Room for the accidentals is the width of the *stack*, packed the same way
+    // the renderer will pack it. A flat allowance reserved one accidental's worth
+    // however many there were, so a chord with three stacked sharps drew them
+    // into the previous column's space.
+    const lead = accidentalLead(notes, spacing, headWidth, input)
     const dots = Math.max(
       0,
       ...notes.map((n) => n.notated?.segments[0]?.dots ?? 0),
@@ -198,7 +246,7 @@ function buildColumns(
     return {
       beat,
       x: 0,
-      lead: hasAccidental ? spacing.accidental * headWidth : 0,
+      lead,
       rod: (spacing.crowd + (dots > 0 ? spacing.dot * dots : 0)) * headWidth,
       spring: 0,
     }
@@ -296,6 +344,34 @@ function placeNotes(
         black: isBlackKey(note.midi),
       }
       system.notes.push(placed)
+    }
+  }
+}
+
+/**
+ * Resolve seconds within every chord, writing the offset onto each placed note.
+ *
+ * Done here rather than in the renderer because *both* halves need it and they
+ * must agree exactly: ScoreView draws the heads, NotationLayer draws the stems
+ * and accidentals against them. Deriving it twice would be two chances to differ.
+ */
+function displaceSeconds(system: System, input: EngraveInput, headWidth: number): void {
+  const { score } = input
+  const stemWidth = (input.theme.layout.notation?.weight ?? 0.12) * input.space
+  const staffOf = (placed: PlacedNote) => (placed.note.hand === 'left' ? 2 : 1)
+
+  const middleFor = (staff: number) =>
+    middleIndexFor(
+      score.clefs?.find((c) => c.staff === staff) ??
+        (staff >= 2
+          ? { beat: 0, staff, sign: 'F', line: 4, octaveChange: 0 }
+          : { beat: 0, staff, sign: 'G', line: 2, octaveChange: 0 }),
+    )
+
+  for (const cluster of clustersOf(system, staffOf)) {
+    const up = clusterUp(cluster, middleFor(cluster.staff))
+    for (const head of layoutHeads(cluster, up, headWidth, stemWidth)) {
+      head.placed.dx = head.dx
     }
   }
 }

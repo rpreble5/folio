@@ -95,6 +95,22 @@ export const isStemless = (type: NoteType): boolean => STEMLESS.has(type)
  */
 export const HEAD_WIDTH = 1.18
 
+/**
+ * Snap a vertical stroke's centre to a half-pixel, so it antialiases the same
+ * way every time.
+ *
+ * A stem is about 1.4px wide and lands wherever the head's edge puts it, which
+ * is a different sub-pixel phase for every note: one stem covers 83.54 to 84.98,
+ * the next 96.26 to 97.70. Each is soft on a different side by a different
+ * amount, and a row of them reads as slightly misaligned even though the maths
+ * is exact. Centring on a half-pixel makes the softness symmetric and identical
+ * for all of them, which is what makes them look like a row.
+ *
+ * The cost is up to a quarter-pixel of attachment error, which is invisible;
+ * the inconsistency it removes is not.
+ */
+export const snapStroke = (x: number): number => Math.round(x - 0.5) + 0.5
+
 // ---------------------------------------------------------------------------
 // Staff geometry
 // ---------------------------------------------------------------------------
@@ -317,6 +333,188 @@ export function flagFor(cluster: Cluster, stem: Stem): PlacedFlag | null {
   // repertoire this is for. Naming it rather than pretending.
   const name = tails === 1 ? 'eighth' : tails === 2 ? '16th' : '32nd'
   return { x: stem.x, y: stem.y1, glyph: `${name}${stem.up ? 'Up' : 'Down'}` }
+}
+
+// ---------------------------------------------------------------------------
+// Seconds: which head crosses the stem
+// ---------------------------------------------------------------------------
+
+export interface HeadPlacement {
+  placed: PlacedNote
+  /** Pixels from the note's own x. Zero is the normal side of the stem. */
+  dx: number
+  /** True when this head crossed to the far side of the stem. */
+  displaced: boolean
+}
+
+/**
+ * Where each head of a chord sits, once seconds are resolved.
+ *
+ * Two heads a second apart cannot share a side of the stem — they would overlap
+ * — so one crosses to the far side. Which one is not a matter of taste; it falls
+ * out of two things that are already fixed:
+ *
+ *   1. The stem attaches to the chord's *root* head — the lowest for an up-stem,
+ *      the highest for a down-stem — and the root must be on the normal side or
+ *      the stem would not touch it.
+ *   2. A displaced head crosses the stem rather than moving away from it, or the
+ *      stem would leave a gap beside it.
+ *
+ * Together those force it: scan outward from the root, and any head a second
+ * from the last one placed on the normal side crosses over. So an up-stem chord
+ * displaces the *upper* note of each second to the right, and a down-stem chord
+ * displaces the *lower* note to the left.
+ *
+ * Chains alternate for free. In C–D–E the C is normal, the D crosses, and the E
+ * is a second from a head that already crossed, so it goes back to normal.
+ *
+ * The overlap is one stem width, so the two heads share the stem as an edge
+ * rather than sitting a hair apart.
+ */
+export function layoutHeads(
+  cluster: Cluster,
+  up: boolean,
+  headWidth: number,
+  stemWidth: number,
+): HeadPlacement[] {
+  const order = up ? cluster.notes : [...cluster.notes].reverse()
+  const shift = (headWidth - stemWidth) * (up ? 1 : -1)
+
+  const out: HeadPlacement[] = []
+  let lastIndex: number | null = null
+  let lastDisplaced: boolean = false
+
+  for (const placed of order) {
+    const index = diatonicIndex(placed.note.spelling)
+    const isSecond = lastIndex !== null && Math.abs(index - lastIndex) === 1
+    const displaced: boolean = isSecond && !lastDisplaced
+
+    out.push({ placed, dx: displaced ? shift : 0, displaced })
+    lastIndex = index
+    lastDisplaced = displaced
+  }
+
+  // Back to low-to-high, so callers do not have to care which way we scanned.
+  return up ? out : out.reverse()
+}
+
+/** How far left of a chord's own x its leftmost ink reaches, in pixels. */
+export function leftEdgeOf(heads: HeadPlacement[]): number {
+  return Math.min(0, ...heads.map((h) => h.dx))
+}
+
+// ---------------------------------------------------------------------------
+// Accidentals: column packing
+// ---------------------------------------------------------------------------
+
+export interface AccidentalBox {
+  /** Glyph key. */
+  glyph: string
+  width: number
+  top: number
+  bottom: number
+}
+
+export interface PlacedAccidental {
+  noteId: string
+  glyph: string
+  /** Pixels from the chord's x. Always negative — accidentals sit left of it. */
+  dx: number
+  /** Vertical centre, in pixels within the system. */
+  y: number
+  /** Which column it landed in. 0 is nearest the heads. */
+  column: number
+}
+
+/** Vertical air between two accidentals sharing a column, in staff spaces. */
+const ACCIDENTAL_PAD_Y = 0.16
+
+/** Air between adjacent accidental columns, in staff spaces. */
+const ACCIDENTAL_PAD_X = 0.16
+
+/**
+ * Stack a chord's accidentals into columns left of the heads.
+ *
+ * This is the one part of engraving with a genuine published *algorithm* rather
+ * than a convention: greedy column packing. Place each accidental in the column
+ * nearest the noteheads where it does not collide vertically with one already
+ * there; if none is free, open a new column further left.
+ *
+ * Two details that matter:
+ *
+ *   - **Order of placement is highest, then lowest, then inward.** Plain
+ *     top-to-bottom produces a staircase drifting left; alternating from the
+ *     outside in keeps the stack compact and symmetric, which is what Gould and
+ *     Ross both describe.
+ *
+ *   - **Collision is tested with the glyphs' real bounding boxes**, not a
+ *     step-count rule. That is not just simpler, it is more correct: a flat's ink
+ *     runs from -1.76 to +0.70 spaces around its origin while a sharp's is
+ *     symmetric at ±1.4, so a flat genuinely can tuck closer beneath the
+ *     accidental above it. The boxes know that; a rule of thumb has to be told.
+ */
+export function stackAccidentals(
+  entries: { noteId: string; y: number; box: AccidentalBox }[],
+  space: number,
+  startX: number,
+): { marks: PlacedAccidental[]; width: number } {
+  if (entries.length === 0) return { marks: [], width: 0 }
+
+  // Highest first, then lowest, then inward. y grows downward, so highest is min.
+  const sorted = [...entries].sort((a, b) => a.y - b.y)
+  const order: typeof sorted = []
+  let lo = 0
+  let hi = sorted.length - 1
+  while (lo <= hi) {
+    order.push(sorted[lo])
+    if (lo !== hi) order.push(sorted[hi])
+    lo += 1
+    hi -= 1
+  }
+
+  const padY = ACCIDENTAL_PAD_Y * space
+  const columns: { noteId: string; top: number; bottom: number; width: number }[][] = []
+  const assigned = new Map<string, number>()
+
+  for (const entry of order) {
+    const top = entry.y + entry.box.top * space
+    const bottom = entry.y + entry.box.bottom * space
+
+    let target = columns.findIndex((column) =>
+      column.every((other) => bottom + padY <= other.top || top - padY >= other.bottom),
+    )
+    if (target < 0) {
+      columns.push([])
+      target = columns.length - 1
+    }
+    columns[target].push({ noteId: entry.noteId, top, bottom, width: entry.box.width * space })
+    assigned.set(entry.noteId, target)
+  }
+
+  // A column is as wide as its widest glyph. Positions come out right-to-left,
+  // so column 0 sits against the heads and the rest march away from them.
+  const widths = columns.map((column) => Math.max(...column.map((c) => c.width)))
+  const padX = ACCIDENTAL_PAD_X * space
+  const rights: number[] = []
+  let cursor = startX
+  for (const width of widths) {
+    rights.push(cursor)
+    cursor -= width + padX
+  }
+
+  const marks: PlacedAccidental[] = entries.map((entry) => {
+    const column = assigned.get(entry.noteId) ?? 0
+    return {
+      noteId: entry.noteId,
+      glyph: entry.box.glyph,
+      dx: rights[column] - entry.box.width * space,
+      y: entry.y,
+      column,
+    }
+  })
+
+  const width = widths.reduce((sum, w) => sum + w + padX, 0)
+  return { marks, width }
 }
 
 // ---------------------------------------------------------------------------

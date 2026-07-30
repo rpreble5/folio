@@ -24,6 +24,11 @@ const NOTE_LETTERS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', '
 export interface PlacedNote {
   note: NoteEvent
   x: number
+  /**
+   * Horizontal shift for a head that crossed the stem, in pixels. Engraved mode
+   * only, and zero for all but the displaced note of a second.
+   */
+  dx?: number
   y: number
   width: number
   height: number

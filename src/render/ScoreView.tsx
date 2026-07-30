@@ -74,6 +74,18 @@ function strokeProps(
     strokeWidth: line.width,
     strokeDasharray: dashArray(line.dash, line.width),
     opacity: line.opacity,
+    /*
+     * Every line this styles is axis-aligned — staff, ledger, barline, beat,
+     * anchor — so snapping it to the pixel grid costs nothing and buys a hard
+     * edge. Without it a 1.1px staff line centred at y=143.55 covers 143.0 to
+     * 144.1: one solid row plus a ten-percent ghost row under it, repeated down
+     * the whole page, which reads as a faint doubling rather than as a hairline.
+     *
+     * Safe only because these are all horizontal or vertical. crispEdges turns
+     * antialiasing off outright, so a sloped line under it would come out
+     * jagged — which is why beams and glyphs are not styled here.
+     */
+    shapeRendering: 'crispEdges' as const,
   }
 }
 
@@ -408,8 +420,14 @@ function SystemGroup({
           ledgerIndices(diatonicIndex(placed.note.spelling)).map((index) => (
             <line
               key={`ledger-${placed.note.id}-${index}`}
-              x1={layout.gutter + placed.x - 4}
-              x2={layout.gutter + placed.x + Math.max(placed.width, layout.noteHeight) + 4}
+              x1={layout.gutter + placed.x + Math.min(0, placed.dx ?? 0) - 4}
+              x2={
+                layout.gutter +
+                placed.x +
+                Math.max(0, placed.dx ?? 0) +
+                Math.max(placed.width, layout.noteHeight) +
+                4
+              }
               y1={yFor(index) + layout.noteHeight / 2}
               y2={yFor(index) + layout.noteHeight / 2}
               {...strokeProps(cfg.lines.ledger, 'ledger', surface)}
@@ -466,7 +484,7 @@ function SystemGroup({
                 <path
                   className="score__head"
                   d={headGlyph(placed)!.path}
-                  transform={`translate(${placed.x}, ${placed.y + placed.height / 2}) scale(${space})`}
+                  transform={`translate(${placed.x + (placed.dx ?? 0)}, ${placed.y + placed.height / 2}) scale(${space})`}
                   fill={placed.style.filled ? placed.style.fill : 'none'}
                   stroke={placed.style.filled ? 'none' : placed.style.fill}
                   strokeWidth={placed.style.filled ? 0 : 0.09}

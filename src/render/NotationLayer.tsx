@@ -20,8 +20,13 @@ import {
   beamGroups,
   beamedStemEnd,
   clustersOf,
+  clusterUp,
   flagFor,
   HEAD_WIDTH,
+  layoutHeads,
+  leftEdgeOf,
+  snapStroke,
+  stackAccidentals,
   isHollow,
   lineOpening,
   middleIndexFor,
@@ -87,6 +92,9 @@ function GlyphMark({
     />
   )
 }
+
+/** Air between the accidental stack and the chord's leftmost head, in spaces. */
+const ACCIDENTAL_GAP = 0.28
 
 /** Accidental names the file may print, mapped to the glyphs we carry. */
 const ACCIDENTAL_KEYS: Record<string, string> = {
@@ -276,11 +284,11 @@ export function NotationLayer({
         const edge = headWidth / 2 - space * 0.06
         const root = flipped
           ? cluster.notes.reduce(
-              (a, p) => (up ? (p.y > a.y ? p : a) : (p.y < a.y ? p : a)),
+              (a, p) => (up ? (p.y > a.y ? p : a) : p.y < a.y ? p : a),
               cluster.notes[0],
             )
           : null
-        const x = root ? root.x + root.width / 2 + (up ? edge : -edge) : stem.x
+        const x = snapStroke(root ? root.x + root.width / 2 + (up ? edge : -edge) : stem.x)
         const y0 = root ? root.y + root.height / 2 : stem.y0
         const y1 = group ? beamedStemEnd(group, x) : stem.y1
 
@@ -308,47 +316,79 @@ export function NotationLayer({
         )
       })}
 
-      {/* --- Accidentals and dots, one per note --------------------------- */}
-      {system.notes.map((placed) => {
-        const middle = middleFor(staffOf(placed))
-        const { dots } = writtenTypeOf(placed.note)
-        const colour = colorOf(placed)
-        const cy = placed.y + placed.height / 2
+      {/* --- Accidentals, stacked per chord ------------------------------- */}
+      {notation.accidentals &&
+        clusters.map((cluster) => {
+          const up = clusterUp(cluster, middleFor(cluster.staff))
+          const heads = layoutHeads(cluster, up, headWidth, weight)
 
-        const accidentalName = placed.note.notated?.accidental
-        const accidentalGlyph =
-          notation.accidentals && accidentalName
-            ? ACCIDENTAL_GLYPHS[ACCIDENTAL_KEYS[accidentalName] ?? '']
-            : undefined
+          const entries = cluster.notes.flatMap((placed) => {
+            const name = placed.note.notated?.accidental
+            const glyph = name ? ACCIDENTAL_GLYPHS[ACCIDENTAL_KEYS[name] ?? ''] : undefined
+            if (!glyph || !name) return []
+            return [{
+              noteId: placed.note.id,
+              y: placed.y + placed.height / 2,
+              box: {
+                glyph: ACCIDENTAL_KEYS[name],
+                width: glyph.width,
+                top: glyph.top,
+                bottom: glyph.bottom,
+              },
+            }]
+          })
+          if (entries.length === 0) return null
 
-        if (!accidentalGlyph && (!notation.dots || dots === 0)) return null
+          // The stack starts left of the chord's leftmost ink, which a displaced
+          // head can push further left than the chord's own x.
+          const start = leftEdgeOf(heads) - ACCIDENTAL_GAP * space
+          const { marks } = stackAccidentals(entries, space, start)
+          const x0 = cluster.notes[0].x
 
-        return (
-          <g key={`mark-${placed.note.id}`} pointerEvents="none">
-            {accidentalGlyph && (
-              <GlyphMark
-                glyph={accidentalGlyph}
-                x={placed.x - (accidentalGlyph.width + 0.32) * space}
-                y={cy}
-                space={space}
-                fill={colour}
-              />
-            )}
-            {notation.dots &&
-              Array.from({ length: dots }, (_, i) => (
+          return (
+            <g key={`acc-${cluster.staff}-${cluster.voice}-${cluster.onset}`} pointerEvents="none">
+              {marks.map((mark) => {
+                const glyph = ACCIDENTAL_GLYPHS[mark.glyph]
+                const owner = cluster.notes.find((p) => p.note.id === mark.noteId)
+                if (!glyph || !owner) return null
+                return (
+                  <GlyphMark
+                    key={mark.noteId}
+                    glyph={glyph}
+                    x={x0 + mark.dx}
+                    y={mark.y}
+                    space={space}
+                    fill={colorOf(owner)}
+                  />
+                )
+              })}
+            </g>
+          )
+        })}
+
+      {/* --- Dots, one per note ------------------------------------------- */}
+      {notation.dots &&
+        system.notes.map((placed) => {
+          const middle = middleFor(staffOf(placed))
+          const { dots } = writtenTypeOf(placed.note)
+          if (dots === 0) return null
+          const cy = placed.y + placed.height / 2
+          return (
+            <g key={`dot-${placed.note.id}`} pointerEvents="none">
+              {Array.from({ length: dots }, (_, i) => (
                 <GlyphMark
-                  key={`dot-${i}`}
+                  key={i}
                   glyph={MARK_GLYPHS.dot}
-                  x={placed.x + placed.width + (0.3 + i * 0.45) * space}
+                  x={placed.x + (placed.dx ?? 0) + placed.width + (0.3 + i * 0.45) * space}
                   // A dot never sits on a line: on one, it moves up a half space.
                   y={onLine(placed, middle) ? cy - space * 0.5 : cy}
                   space={space}
-                  fill={colour}
+                  fill={colorOf(placed)}
                 />
               ))}
-          </g>
-        )
-      })}
+            </g>
+          )
+        })}
     </g>
   )
 }

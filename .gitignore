@@ -13,3 +13,7 @@ dist
 .glyphcheck.mjs
 .beamcheck.mjs
 .tilecheck.mjs
+.chordcheck.mjs
+.sharpcheck.mjs
+.sharp.png
+.scalecheck.mjs
