@@ -7,3 +7,4 @@ dist
 .shot.mjs
 .measure.mjs
 .xmlcheck.mjs
+.fillcheck.mjs

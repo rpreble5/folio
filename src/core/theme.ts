@@ -7,7 +7,7 @@
  * and it keeps a shared theme readable as a diff.
  */
 
-import type { Hand, KeyMark, NoteEvent } from './types'
+import type { Hand, KeyMark, NoteEvent, NoteType } from './types'
 import { degreeLabel, noteName, octaveOf, pitchClass, scaleDegree, solfege } from './pitch'
 import { lightnessOf, scaleChroma, shiftLightness, withLightness } from './oklch'
 import {
@@ -352,8 +352,20 @@ export function staffLineStyle(staff: StaffStyle, index: number, base: LineStyle
  * encodes is a choice rather than a fixed rule. Outlining the accidentals is
  * the obvious use, but the same treatment reads just as well applied to notes
  * outside the key, or to one hand.
+ *
+ * `writtenLong` is the one target that reproduces a rule from traditional
+ * notation rather than inventing one: a half note and a whole note are hollow,
+ * everything shorter is solid. That is the whole of the convention that survives
+ * here — the rest of it is stems and flags, which say duration a second time and
+ * would contradict length.
  */
-export type OutlineWhat = 'none' | 'accidentals' | 'outsideKey' | 'leftHand' | 'longNotes'
+export type OutlineWhat =
+  | 'none'
+  | 'accidentals'
+  | 'outsideKey'
+  | 'leftHand'
+  | 'longNotes'
+  | 'writtenLong'
 export type OutlineStyle = 'hollow' | 'tinted'
 
 export const OUTLINE_TARGETS: { id: OutlineWhat; label: string }[] = [
@@ -361,8 +373,12 @@ export const OUTLINE_TARGETS: { id: OutlineWhat; label: string }[] = [
   { id: 'accidentals', label: 'Sharps & flats' },
   { id: 'outsideKey', label: 'Outside the key' },
   { id: 'leftHand', label: 'Left hand' },
-  { id: 'longNotes', label: 'Long notes' },
+  { id: 'writtenLong', label: 'Half & whole notes' },
+  { id: 'longNotes', label: 'Two beats or more' },
 ]
+
+/** Note types an engraver draws with a hollow head. */
+const HOLLOW_TYPES = new Set<NoteType>(['half', 'whole', 'breve'])
 
 // ---------------------------------------------------------------------------
 // Trails
@@ -576,7 +592,26 @@ function shouldOutline(note: NoteEvent, theme: Theme, key: KeyMark): boolean {
       return note.hand === 'left'
     case 'longNotes':
       return note.duration >= 2
+    case 'writtenLong':
+      return isWrittenLong(note)
   }
+}
+
+/**
+ * Was this note engraved with a hollow head?
+ *
+ * The first segment decides it, because that is the head the note begins on: a
+ * half tied to a quarter is drawn hollow-then-solid, and since we merge the tie
+ * into one shape, the shape takes the head it starts with.
+ *
+ * Duration is the fallback for MIDI and the built-in pieces, which carry no
+ * written types at all. It is a proxy and it is wrong in the places a proxy is
+ * wrong — two tied quarters sound two beats and are engraved solid — but silently
+ * filling every note of a MIDI import would be worse.
+ */
+function isWrittenLong(note: NoteEvent): boolean {
+  const first = note.notated?.segments[0]
+  return first ? HOLLOW_TYPES.has(first.type) : note.duration >= 2
 }
 
 /** Does this note carry a label under the current target? */
