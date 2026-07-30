@@ -5,6 +5,8 @@ import { cloneTheme, makeSurface, newRuleId } from '../core/theme'
 import { PRESETS, getPreset } from '../core/presets'
 import { LIBRARY } from '../core/library'
 import type { CvdMode } from '../render/cvd'
+import type { MidiDevice } from '../io/midi'
+import { createSession } from '../practice/session'
 
 // v2: colour became a {source, order, tone, rotate} config and the chromatic
 // ring became the outline channel, so v1 themes no longer load.
@@ -118,6 +120,15 @@ interface State {
   importError: string | null
   toast: string | null
 
+  /**
+   * The connected keyboard, and what it is doing.
+   *
+   * Held in the store rather than in the reading view because a connection
+   * outlives the screen that started it — walking back to the library to pick a
+   * different piece should not drop the keyboard.
+   */
+  midi: MidiState
+
   setScreen: (screen: Screen) => void
   loadScore: (score: Score) => void
   applyPreset: (id: string) => void
@@ -150,6 +161,42 @@ interface State {
 
   setImportError: (message: string | null) => void
   showToast: (message: string | null) => void
+
+  connectMidi: () => Promise<void>
+  disconnectMidi: () => void
+  /** Held keys, matched note ids and follower position, from one key press. */
+  setMidiHeld: (held: Set<number>, lit: Set<string>) => void
+  setMidiStatus: (patch: Partial<MidiState>) => void
+  setFollowing: (following: boolean) => void
+}
+
+export interface MidiState {
+  /** Null until a connection has been attempted. */
+  connected: boolean
+  connecting: boolean
+  devices: MidiDevice[]
+  error: string | null
+  /** Keys currently down, as MIDI numbers. */
+  held: Set<number>
+  /** Score notes those keys account for, for the highlight. */
+  lit: Set<string>
+  /** Whether the follower drives the reading position. */
+  following: boolean
+  /** Rolling agreement with the score, 0 to 1. */
+  confidence: number
+  wrong: number
+}
+
+const NO_MIDI: MidiState = {
+  connected: false,
+  connecting: false,
+  devices: [],
+  error: null,
+  held: new Set(),
+  lit: new Set(),
+  following: true,
+  confidence: 0,
+  wrong: 0,
 }
 
 const DARK: Theme['surface'] = PRESETS[0].surface
@@ -175,6 +222,7 @@ export const useStore = create<State>((set, get) => ({
 
   importError: null,
   toast: null,
+  midi: NO_MIDI,
 
   setScreen: (screen) => set({ screen }),
 
@@ -279,4 +327,54 @@ export const useStore = create<State>((set, get) => ({
 
   setImportError: (importError) => set({ importError }),
   showToast: (toast) => set({ toast }),
+
+  connectMidi: async () => {
+    set({ midi: { ...get().midi, connecting: true, error: null } })
+    session.setScore(get().score)
+    await session.connect()
+    set({ midi: { ...get().midi, connecting: false } })
+  },
+
+  disconnectMidi: () => {
+    session.disconnect()
+  },
+
+  setMidiHeld: (held, lit) => set({ midi: { ...get().midi, held, lit } }),
+
+  setMidiStatus: (patch) => set({ midi: { ...get().midi, ...patch } }),
+
+  setFollowing: (following) => set({ midi: { ...get().midi, following } }),
 }))
+
+/**
+ * The one live session.
+ *
+ * A module singleton rather than store state: it owns a device handle and a
+ * mutable follower, neither of which anything renders, and putting them in the
+ * store would mean a re-render per key press for data nobody reads.
+ *
+ * Its handlers write back into the store, which is why it is created after it —
+ * `useStore` has to exist before anything can call `setState` on it.
+ */
+export const session = createSession({
+  onStatus: (patch) =>
+    useStore.setState((s) => ({ midi: { ...s.midi, ...patch } })),
+
+  onNotes: (held, lit) =>
+    useStore.setState((s) => ({ midi: { ...s.midi, held, lit } })),
+
+  onPosition: (beat, snapshot) =>
+    useStore.setState((s) => {
+      const midi = { ...s.midi, confidence: snapshot.confidence, wrong: snapshot.wrong }
+      // Following is what moves the reading position; with it off the keyboard
+      // still lights notes up, which is worth having on its own.
+      if (!s.midi.following) return { midi }
+      return { midi, playheadBeat: beat }
+    }),
+})
+
+// Loading a piece has to rebuild the follower, or the keyboard would still be
+// matching against the score before it.
+useStore.subscribe((state, previous) => {
+  if (state.score !== previous.score) session.setScore(state.score)
+})

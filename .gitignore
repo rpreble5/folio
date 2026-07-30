@@ -17,3 +17,5 @@ dist
 .sharpcheck.mjs
 .sharp.png
 .scalecheck.mjs
+.followcheck.mjs
+.livecheck.mjs

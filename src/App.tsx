@@ -23,6 +23,7 @@ export default function App() {
   const score = useStore((s) => s.score)
   const theme = useStore((s) => s.theme)
   const playing = useStore((s) => s.playing)
+  const midi = useStore((s) => s.midi)
   const playheadBeat = useStore((s) => s.playheadBeat)
   const tempoScale = useStore((s) => s.tempoScale)
   const selectedNoteId = useStore((s) => s.selectedNoteId)
@@ -96,7 +97,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, score, tempoScale])
 
+  /**
+   * What is lit: playback's own notes, or the ones under the player's hands.
+   *
+   * Worth having here and not only in the reading view — seeing your own playing
+   * light up while you are choosing colours is the fastest way to find out that
+   * two of them look alike.
+   */
   const activeIds = useMemo(() => {
+    if (midi.connected && !playing) return midi.lit
     if (!playing) return new Set<string>()
     const ids = new Set<string>()
     for (const note of score.notes) {
@@ -105,7 +114,7 @@ export default function App() {
       }
     }
     return ids
-  }, [playing, playheadBeat, score.notes])
+  }, [playing, playheadBeat, score.notes, midi.connected, midi.lit])
 
   // --- Follow the playhead down the page ----------------------------------
   useEffect(() => {

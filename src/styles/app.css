@@ -1795,3 +1795,64 @@ button {
   box-shadow: 0 0 0 1px var(--line), 0 1px 3px rgb(0 0 0 / 0.25);
   overflow: hidden;
 }
+
+/* ------------------------------------------------------------- keyboard -- */
+
+/*
+ * The connected-keyboard control.
+ *
+ * Reads as a status first and a button second, because that is how it is used:
+ * a player glances at it to check the keyboard is still there, and only clicks
+ * it twice in a session. So it sits quiet until connected, then names the
+ * device — "connected" is not the reassurance anyone wants, the name of their
+ * own piano is.
+ */
+.keyboard-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.keyboard-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.keyboard-btn:disabled {
+  opacity: 0.6;
+}
+
+.keyboard-btn--live {
+  color: var(--ink);
+}
+
+.keyboard-btn__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.32;
+  transition: opacity var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.keyboard-btn--live .keyboard-btn__dot {
+  opacity: 1;
+  background: #6ee7a8;
+  box-shadow: 0 0 0 3px rgba(110, 231, 168, 0.18);
+}
+
+/* Live in the reading view too, where the page's own ink is the colour. */
+.read__btn--live {
+  opacity: 1;
+  font-weight: 650;
+}

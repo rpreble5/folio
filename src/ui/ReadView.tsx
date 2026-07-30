@@ -25,7 +25,7 @@
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from '../state/store'
+import { session, useStore } from '../state/store'
 import { layoutScore } from '../render/layout'
 import { ScoreView } from '../render/ScoreView'
 import { player } from '../audio/player'
@@ -49,6 +49,9 @@ export function ReadView() {
   const setPlayhead = useStore((s) => s.setPlayhead)
   const systemsShown = useStore((s) => s.readSystems)
   const setSystemsShown = useStore((s) => s.setReadSystems)
+  const midi = useStore((s) => s.midi)
+  const connectMidi = useStore((s) => s.connectMidi)
+  const disconnectMidi = useStore((s) => s.disconnectMidi)
 
   const [viewport, setViewport] = useState({ width: 1200, height: 800 })
   const [awake, setAwake] = useState(true)
@@ -130,7 +133,11 @@ export function ReadView() {
   const step = (delta: number) => {
     const next = Math.max(0, Math.min(current + delta, count - 1))
     const system = layout.systems[next]
-    if (system) setPlayhead(system.startBeat)
+    if (!system) return
+    setPlayhead(system.startBeat)
+    // The follower has to come along, or the next note played would drag the
+    // page straight back to where the reader just moved it from.
+    session.seek(system.startBeat)
   }
 
   const wake = () => {
@@ -216,14 +223,21 @@ export function ReadView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, current, systemsShown, layout, score])
 
+  /**
+   * What is lit: the notes sounding under playback, or the notes under the
+   * player's hands. Never both — playback and a keyboard are two ways of
+   * answering the same question, and showing both at once would make it
+   * impossible to tell which one you were watching.
+   */
   const activeIds = useMemo(() => {
+    if (midi.connected && !playing) return midi.lit
     if (!playing) return new Set<string>()
     const ids = new Set<string>()
     for (const note of score.notes) {
       if (note.onset <= playheadBeat && note.onset + note.duration > playheadBeat) ids.add(note.id)
     }
     return ids
-  }, [playing, playheadBeat, score.notes])
+  }, [playing, playheadBeat, score.notes, midi.connected, midi.lit])
 
   const barLength = beatsPerMeasure(timeSignatureAt(score, playheadBeat))
   const bar = Math.min(
@@ -326,6 +340,24 @@ export function ReadView() {
 
         <span className="read__sep" />
 
+        {/* One button, three states. A device that is connected says so by
+            naming itself, because "connected" is not the reassurance a player
+            wants — the name of their own keyboard is. */}
+        <button
+          className={`read__btn read__btn--text${midi.connected ? ' read__btn--live' : ''}`}
+          onClick={() => (midi.connected ? disconnectMidi() : void connectMidi())}
+          disabled={midi.connecting}
+          title={midi.error ?? undefined}
+        >
+          {midi.connecting
+            ? 'Connecting…'
+            : midi.connected
+              ? (midi.devices[0]?.name ?? 'Listening')
+              : 'Keyboard'}
+        </button>
+
+        <span className="read__sep" />
+
         <button className="read__btn read__btn--text" onClick={() => setScreen('score')}>
           Done
         </button>
@@ -334,7 +366,7 @@ export function ReadView() {
       {/* Shown once and then only when the controls are woken, because a hint
           that never goes away is an advertisement. */}
       <div className="read__hint" style={{ color: theme.surface.muted }}>
-        space to play · ↑ ↓ to move · esc to leave
+        {midi.error ?? 'space to play · ↑ ↓ to move · esc to leave'}
       </div>
     </div>
   )

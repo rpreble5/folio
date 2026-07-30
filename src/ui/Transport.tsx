@@ -2,6 +2,7 @@ import { useStore } from '../state/store'
 import { beatToSeconds, beatsPerMeasure, timeSignatureAt } from '../core/types'
 import { player } from '../audio/player'
 import { Slider } from './controls'
+import { midiSupport } from '../io/midi'
 
 function formatTime(seconds: number): string {
   const total = Math.max(0, Math.round(seconds))
@@ -16,6 +17,11 @@ export function Transport() {
   const setPlaying = useStore((s) => s.setPlaying)
   const setPlayhead = useStore((s) => s.setPlayhead)
   const setTempoScale = useStore((s) => s.setTempoScale)
+  const midi = useStore((s) => s.midi)
+  const connectMidi = useStore((s) => s.connectMidi)
+  const disconnectMidi = useStore((s) => s.disconnectMidi)
+  const setFollowing = useStore((s) => s.setFollowing)
+  const support = midiSupport()
 
   const barLength = beatsPerMeasure(timeSignatureAt(score, playheadBeat))
   const bar = Math.floor(playheadBeat / barLength) + 1
@@ -76,6 +82,40 @@ export function Transport() {
       <div className="transport__readout">
         bar {Math.min(bar, totalBars)} of {totalBars}
       </div>
+
+      {/* Hidden entirely where MIDI cannot work, rather than shown disabled: a
+          greyed button on an iPad invites a tap that can only ever fail, and the
+          reason is the browser, which the player cannot do anything about. */}
+      {support.ok && (
+        <button
+          className={`keyboard-btn${midi.connected ? ' keyboard-btn--live' : ''}`}
+          onClick={() => (midi.connected ? disconnectMidi() : void connectMidi())}
+          disabled={midi.connecting}
+          title={
+            midi.error ??
+            (midi.connected
+              ? midi.devices.map((d) => d.name).join(', ')
+              : 'Play along and your notes light up')
+          }
+        >
+          <span className="keyboard-btn__dot" />
+          {midi.connecting
+            ? 'Connecting…'
+            : midi.connected
+              ? (midi.devices[0]?.name ?? 'Listening')
+              : 'Keyboard'}
+        </button>
+      )}
+
+      {midi.connected && (
+        <button
+          className={`keyboard-btn${midi.following ? ' keyboard-btn--live' : ''}`}
+          onClick={() => setFollowing(!midi.following)}
+          title="Let your playing move the position, so the reading view turns itself"
+        >
+          {midi.following ? 'Following' : 'Follow off'}
+        </button>
+      )}
 
       <div className="transport__readout" style={{ minWidth: 52 }}>
         {bpm} bpm
