@@ -379,14 +379,27 @@ function displaceSeconds(system: System, input: EngraveInput, headWidth: number)
 /**
  * Where a rest sits when the file did not say.
  *
- * The convention is the middle line of its staff, which for a single voice is
- * right and for several voices is the starting point that gets nudged apart.
- * Multi-voice offsetting is deliberately not attempted here.
+ * Not all on the same line, which is the mistake that is easy to make and easy
+ * to see once made. Every rest glyph is drawn to attach to a staff *line*, and
+ * they attach to different ones:
+ *
+ *   - A whole rest **hangs below the fourth line**, one above the middle. Its
+ *     ink runs downward from its origin (-0.04 to +0.54 spaces), which is what
+ *     makes it read as hanging.
+ *   - A half rest **sits on the middle line**. Its ink runs upward (-0.57 to
+ *     +0.01), so it appears to rest on top of it.
+ *   - Everything shorter is centred on the middle line.
+ *
+ * Put the whole rest on the middle line with the rest of them and it hangs a
+ * whole line too low, which reads as a half rest that has come loose.
  */
 function restIndex(rest: RestEvent, clef: ClefMark): number {
   if (rest.displayIndex !== undefined) return rest.displayIndex
-  // Middle line of a staff: two lines above its lowest, in diatonic steps.
-  return middleIndexFor(clef)
+
+  const middle = middleIndexFor(clef)
+  const type = rest.wholeBar ? 'whole' : rest.notated?.segments[0]?.type
+  // Two diatonic steps is one staff space, so this is the line above the middle.
+  return type === 'whole' ? middle + 2 : middle
 }
 
 function placeRests(

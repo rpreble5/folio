@@ -79,7 +79,7 @@ function persistCustomThemes(themes: Theme[]): void {
   }
 }
 
-export type Screen = 'library' | 'score' | 'read'
+export type Screen = 'library' | 'score' | 'read' | 'practice'
 export type StudioTab =
   | 'styles'
   | 'colour'

@@ -19,3 +19,6 @@ dist
 .scalecheck.mjs
 .followcheck.mjs
 .livecheck.mjs
+.drillcheck.mjs
+.practiceshot.mjs
+practice-*.png

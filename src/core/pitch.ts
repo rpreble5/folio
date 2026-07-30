@@ -39,6 +39,35 @@ export function octaveOf(midi: number): number {
   return Math.floor(midi / 12) - 1
 }
 
+/** The natural whose letter each pitch class takes, and by how much it is altered. */
+const SHARP_SPELLING: [Step, number][] = [
+  ['C', 0], ['C', 1], ['D', 0], ['D', 1], ['E', 0], ['F', 0],
+  ['F', 1], ['G', 0], ['G', 1], ['A', 0], ['A', 1], ['B', 0],
+]
+
+const FLAT_SPELLING: [Step, number][] = [
+  ['C', 0], ['D', -1], ['D', 0], ['E', -1], ['E', 0], ['F', 0],
+  ['G', -1], ['G', 0], ['A', -1], ['A', 0], ['B', -1], ['B', 0],
+]
+
+/**
+ * How to write a pitch, given the key it is in.
+ *
+ * MIDI knows only which key went down, so a black key has two equally true
+ * names and the key signature decides between them: sharp keys spell F♯, flat
+ * keys spell G♭. Getting this wrong does not just look wrong — the spelling is
+ * what puts the notehead on a line or a space, so a G♭ written as F♯ appears a
+ * step too low on the staff.
+ *
+ * Every black-key spelling stays inside the octave it started in, because the
+ * octave boundary falls at C and none of the five reaches across it.
+ */
+export function spellPitch(midi: number, key: KeyMark): Spelling {
+  const table = key.fifths < 0 ? FLAT_SPELLING : SHARP_SPELLING
+  const [step, alter] = table[pitchClass(midi)]
+  return { step, alter, octave: octaveOf(midi) }
+}
+
 const BLACK_KEYS = new Set([1, 3, 6, 8, 10])
 
 export function isBlackKey(midi: number): boolean {

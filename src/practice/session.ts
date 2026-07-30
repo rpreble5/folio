@@ -26,9 +26,23 @@ export interface SessionHandlers {
   onPosition(beat: number, snapshot: FollowerSnapshot): void
 }
 
+/**
+ * What the incoming notes are for.
+ *
+ * `follow` runs the follower and moves the reading position. `raw` does not —
+ * the notes still reach any listener, but nothing touches the score. Drills use
+ * `raw`, because a drill's prompts have nothing to do with where the piece being
+ * read has got to, and letting the follower run would leave the reading view
+ * somewhere random when the drill ends.
+ */
+export type SessionMode = 'follow' | 'raw'
+
 export interface Session {
   connect(): Promise<void>
   disconnect(): void
+  setMode(mode: SessionMode): void
+  /** Tap the raw note stream. Returns an unsubscribe. */
+  listen(fn: (midi: number, on: boolean) => void): () => void
   /** Rebuild the follower for a different piece, or after a seek. */
   setScore(score: Score): void
   seek(beat: number): void
@@ -45,6 +59,8 @@ export function createSession(
   let connection: MidiConnection | null = null
   let follower: Follower | null = null
   let targets: Target[] = []
+  let mode: SessionMode = 'follow'
+  const listeners = new Set<(midi: number, on: boolean) => void>()
 
   const held = new Set<number>()
   const lit = new Set<string>()
@@ -77,6 +93,9 @@ export function createSession(
   }
 
   const handleNote = (midi: number, on: boolean) => {
+    for (const listener of listeners) listener(midi, on)
+    if (mode !== 'follow') return
+
     if (on) {
       // Some keyboards repeat a note-on for a key already down. Treating that as
       // a fresh press would advance the follower twice on one keystroke.
@@ -91,6 +110,21 @@ export function createSession(
 
   return {
     options,
+
+    setMode(next: SessionMode) {
+      if (next === mode) return
+      mode = next
+      // Leaving follow mode with keys down would strand them lit forever.
+      held.clear()
+      lit.clear()
+      litByKey.clear()
+      handlers.onNotes(new Set(), new Set())
+    },
+
+    listen(fn) {
+      listeners.add(fn)
+      return () => listeners.delete(fn)
+    },
 
     async connect() {
       if (connection) return

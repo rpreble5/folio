@@ -1856,3 +1856,142 @@ button {
   opacity: 1;
   font-weight: 650;
 }
+
+/* ------------------------------------------------------------- practice -- */
+
+/*
+ * Rapid fire.
+ *
+ * Sits on the score's own page colour rather than the app's chrome, for the same
+ * reason the reading view does: the thing being practised is a page of music, and
+ * framing it in software furniture makes it a quiz instead.
+ */
+.practice {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+}
+
+.practice__top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px;
+  font-size: 13px;
+}
+
+.practice__title {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+  opacity: 0.72;
+}
+
+.practice__spacer {
+  flex: 1;
+}
+
+.practice__count {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.practice__count i {
+  opacity: 0.4;
+  font-style: normal;
+  margin: 0 2px;
+}
+
+.practice__stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px 40px;
+}
+
+/*
+ * The prompt.
+ *
+ * The flash is a wash behind the music, not a border or an icon: a shape that
+ * appears and disappears drags the eye off the notes, and the notes are the only
+ * thing on screen worth looking at. Right is brief and quiet; wrong is quieter
+ * still, because the prompt has not gone anywhere and the player can see that.
+ */
+.practice__prompt {
+  border-radius: 18px;
+  padding: 10px 18px;
+  transition: background var(--dur) var(--ease);
+  background: transparent;
+}
+
+.practice__prompt--right {
+  background: rgba(110, 231, 168, 0.16);
+}
+
+.practice__prompt--wrong {
+  background: rgba(255, 140, 140, 0.13);
+}
+
+.practice__intro,
+.practice__setup,
+.practice__summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  max-width: 460px;
+  text-align: center;
+}
+
+.practice__setup {
+  align-items: stretch;
+  text-align: left;
+  min-width: 340px;
+}
+
+.practice__note {
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.practice__score {
+  font-size: 46px;
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.practice__score i {
+  font-style: normal;
+  opacity: 0.32;
+  margin: 0 4px;
+}
+
+.practice__stat,
+.practice__slow {
+  font-size: 13px;
+}
+
+.practice__slow {
+  font-variant-numeric: tabular-nums;
+}
+
+.practice__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.practice__hint {
+  padding: 0 0 26px;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
