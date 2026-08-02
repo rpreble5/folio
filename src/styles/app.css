@@ -2210,3 +2210,99 @@ body {
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
+
+/* ---------------------------------------------------------------- levels -- */
+
+/*
+ * The course.
+ *
+ * A list rather than a grid or a path: eight items in order, where the only
+ * question is which one is next. A winding map would be decoration standing
+ * between someone and the answer.
+ */
+.levels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(520px, 100%);
+}
+
+.level {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 15px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  /* Background and text come from the theme inline: this screen is painted with
+     the score's page colour, so a card in the app's chrome colour would be a
+     dark box on a white page. */
+  transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.level:hover:not(:disabled) {
+  /* A brightness nudge rather than a colour, since the colour is not ours. It
+     lightens a dark page and darkens a light one, which is right either way. */
+  filter: contrast(1.06) brightness(1.06);
+}
+
+/* Locked levels stay legible rather than being greyed to nothing: the point of
+   showing them is that you can see what is coming. */
+.level--locked {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.level__mark {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.level--done .level__mark {
+  background: rgba(64, 160, 106, 0.22) !important;
+  color: #2e9c63;
+}
+
+.level--free .level__mark {
+  background: transparent !important;
+}
+
+.level__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.level__name {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.level__goal {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.level__best {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice__verdict {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.practice__verdict--pass {
+  color: #6ee7a8;
+}

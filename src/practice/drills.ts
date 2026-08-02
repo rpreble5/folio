@@ -45,13 +45,28 @@ export const DEFAULT_DRILL: DrillConfig = {
   length: 20,
 }
 
+/**
+ * One thing to play.
+ *
+ * `steps` is a list of simultaneities *in order*: one entry is a single note or a
+ * chord, and several entries are a phrase to be played left to right. That one
+ * shape covers everything — a single note is `[[60]]`, a triad is
+ * `[[60,64,67]]`, a four-note phrase is `[[60],[62],[64],[65]]`, and a phrase
+ * with chords in it is just a mixture.
+ *
+ * Order matters between steps and does not matter within one, which is exactly
+ * the distinction a keyboard makes: the notes of a chord arrive in whatever
+ * order the hand lands, and the notes of a phrase do not.
+ */
 export interface Prompt {
   id: string
-  /** What has to be played. Order does not matter within a chord. */
-  pitches: number[]
+  steps: number[][]
   /** Renderable on its own, through the ordinary layout and theme. */
   score: Score
 }
+
+/** Everything a prompt asks for, flattened. For statistics, not for matching. */
+export const pitchesOf = (prompt: Prompt): number[] => prompt.steps.flat()
 
 export interface Attempt {
   promptId: string
@@ -93,9 +108,11 @@ function pool(config: DrillConfig, key: KeyMark): number[] {
 /**
  * Build a Score holding exactly one prompt.
  *
- * A whole note in one bar. No rhythm to read, deliberately — a reading drill
- * should ask one question, and mixing pitch with duration means a wrong answer
- * no longer says which of the two was the problem.
+ * Rhythm is held constant on purpose: a lone step is a whole note filling a bar
+ * of 4/4, and a phrase is all quarter notes in a bar whose time signature is
+ * however many there are. A reading drill should ask one question, and mixing
+ * pitch with duration means a wrong answer no longer says which of the two was
+ * the problem. Every prompt is exactly one bar, so nothing ever wraps.
  *
  * A full grand staff with a whole-bar rest on the hand that is not playing,
  * rather than a lone treble staff. Two reasons: it is what piano music actually
@@ -103,20 +120,32 @@ function pool(config: DrillConfig, key: KeyMark): number[] {
  * has nothing to draw the lower staff *from*, which produced five bare lines
  * with no clef sitting under the prompt like a mistake.
  */
-function scoreFor(pitches: number[], key: KeyMark, hand: 'left' | 'right', id: string): Score {
+export function scoreFor(
+  steps: number[][],
+  key: KeyMark,
+  hand: 'left' | 'right',
+  id: string,
+): Score {
   const staff = hand === 'left' ? 2 : 1
-  const notes = pitches.map((midi, i) => ({
-    id: `${id}-${i}`,
-    onset: 0,
-    duration: 4,
-    midi,
-    spelling: spellPitch(midi, key),
-    hand,
-    voice: 1,
-    measure: 0,
-    velocity: 0.8,
-    notated: { segments: [{ type: 'whole' as const, dots: 0, beats: 4 }] },
-  }))
+  const single = steps.length === 1
+  const beats = single ? 4 : 1
+  const type = single ? ('whole' as const) : ('quarter' as const)
+  const barBeats = single ? 4 : steps.length
+
+  const notes = steps.flatMap((step, i) =>
+    step.map((midi, j) => ({
+      id: `${id}-${i}-${j}`,
+      onset: i * beats,
+      duration: beats,
+      midi,
+      spelling: spellPitch(midi, key),
+      hand,
+      voice: 1,
+      measure: 0,
+      velocity: 0.8,
+      notated: { segments: [{ type, dots: 0, beats }] },
+    })),
+  )
   markBarStarts(notes)
 
   return {
@@ -128,12 +157,12 @@ function scoreFor(pitches: number[], key: KeyMark, hand: 'left' | 'right', id: s
       {
         id: `${id}-rest`,
         onset: 0,
-        duration: 4,
+        duration: barBeats,
         staff: staff === 1 ? 2 : 1,
         voice: 1,
         measure: 0,
         wholeBar: true,
-        notated: { segments: [{ type: 'whole' as const, dots: 0, beats: 4 }] },
+        notated: { segments: [{ type: 'whole' as const, dots: 0, beats: barBeats }] },
       },
     ],
     clefs: [
@@ -141,9 +170,9 @@ function scoreFor(pitches: number[], key: KeyMark, hand: 'left' | 'right', id: s
       { beat: 0, staff: 2, sign: 'F', line: 4, octaveChange: 0 },
     ],
     tempos: [{ beat: 0, bpm: 90 }],
-    timeSignatures: [{ beat: 0, numerator: 4, denominator: 4 }],
+    timeSignatures: [{ beat: 0, numerator: barBeats, denominator: 4 }],
     keys: [{ ...key, beat: 0 }],
-    length: 4,
+    length: barBeats,
   }
 }
 
@@ -169,7 +198,7 @@ export function generateDrill(config: DrillConfig, key: KeyMark, seed: number): 
     previous = pitches
 
     const id = `p${i}`
-    prompts.push({ id, pitches, score: scoreFor(pitches, key, hand, id) })
+    prompts.push({ id, steps: [pitches], score: scoreFor([pitches], key, hand, id) })
   }
 
   return prompts

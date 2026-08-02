@@ -1,7 +1,7 @@
 /**
  * Rapid fire: a prompt, an answer, immediately the next.
  *
- * The prompt is a one-note score rendered by the ordinary layout and the user's
+ * The prompt is a one-bar score rendered by the ordinary layout and the user's
  * own theme, which is the entire point — someone who has coloured by pitch class
  * and dropped the letter labels needs practice reading *that*, and no
  * general-purpose trainer can give it to them.
@@ -19,23 +19,28 @@ import { exitFullscreen, keepAwake } from './screen'
 import { layoutScore } from '../render/layout'
 import { ScoreView } from '../render/ScoreView'
 import { keyAt } from '../core/types'
-import { noteName } from '../core/pitch'
-import { spellPitch } from '../core/pitch'
+import { noteName, spellPitch } from '../core/pitch'
 import {
   DEFAULT_DRILL,
   generateDrill,
+  pitchesOf,
   summarise,
   type Attempt,
   type DrillConfig,
   type Prompt,
 } from '../practice/drills'
+import { LEVELS, type Level } from '../practice/levels'
+import { loadProgress, recordResult, unlockedCount, type Progress } from '../practice/progress'
 import { midiSupport } from '../io/midi'
 import { bluetoothSupport } from '../io/blemidi'
 import { MidiDoctor } from './MidiDoctor'
 import { Field, Group, Pills, Range } from './controls'
+import type { Theme } from '../core/theme'
 
 /** How long the "right" flash sits before the next prompt. */
 const SETTLE_MS = 170
+
+type Stage = 'menu' | 'free' | 'running' | 'summary'
 
 export function PracticeView() {
   const theme = useStore((s) => s.theme)
@@ -46,50 +51,55 @@ export function PracticeView() {
   const connectMidi = useStore((s) => s.connectMidi)
   const connectBluetooth = useStore((s) => s.connectBluetooth)
 
+  const [stage, setStage] = useState<Stage>('menu')
+  const [level, setLevel] = useState<Level | null>(null)
   const [config, setConfig] = useState<DrillConfig>(DEFAULT_DRILL)
   const [seed, setSeed] = useState(1)
   const [index, setIndex] = useState(0)
+  const [step, setStep] = useState(0)
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [flash, setFlash] = useState<'none' | 'right' | 'wrong'>('none')
-  const [running, setRunning] = useState(false)
   const [doctor, setDoctor] = useState(false)
+  const [progress, setProgress] = useState<Progress>(() => loadProgress())
 
   const key = useMemo(() => keyAt(score, 0), [score])
-  const prompts = useMemo(
-    () => generateDrill(config, key, seed),
-    [config, key, seed],
-  )
+  const [prompts, setPrompts] = useState<Prompt[]>([])
   const prompt: Prompt | undefined = prompts[index]
-  const done = running && index >= prompts.length
 
-  // Held keys and wrong-note count for the prompt in front of the player. Refs
-  // rather than state: they change on every key press and nothing renders them
-  // directly, so putting them in state would re-render the score per keystroke.
+  // Held keys and the wrong-note count for the prompt in front of the player.
+  // Refs rather than state: they change on every key press and nothing renders
+  // them, so state would mean re-rendering the score per keystroke.
   const heldRef = useRef(new Set<number>())
+  const stepRef = useRef(0)
   const wrongRef = useRef(0)
   const shownAt = useRef(0)
   const settling = useRef(false)
 
   const beginPrompt = useCallback(() => {
     heldRef.current = new Set()
+    stepRef.current = 0
     wrongRef.current = 0
     shownAt.current = performance.now()
     settling.current = false
+    setStep(0)
     setFlash('none')
   }, [])
 
-  const start = () => {
+  const startLevel = (next: Level) => {
+    setLevel(next)
+    setPrompts(next.make(key, seed))
     setAttempts([])
     setIndex(0)
-    setRunning(true)
+    setStage('running')
     beginPrompt()
   }
 
-  const again = () => {
-    setSeed((s) => s + 1)
+  const startFree = () => {
+    setLevel(null)
+    setPrompts(generateDrill(config, key, seed))
     setAttempts([])
     setIndex(0)
-    setRunning(true)
+    setStage('running')
     beginPrompt()
   }
 
@@ -111,9 +121,7 @@ export function PracticeView() {
   useEffect(keepAwake, [])
 
   useEffect(() => {
-    if (!running || !prompt) return
-
-    const wanted = new Set(prompt.pitches)
+    if (stage !== 'running' || !prompt) return
 
     const stop = session.listen((note, on) => {
       if (settling.current) return
@@ -122,10 +130,15 @@ export function PracticeView() {
         heldRef.current.delete(note)
         return
       }
-      if (heldRef.current.has(note)) return
-      heldRef.current.add(note)
 
-      if (!wanted.has(note)) {
+      const steps = prompt.steps
+      const current = steps[stepRef.current] ?? []
+      const previous = stepRef.current > 0 ? steps[stepRef.current - 1] : []
+
+      if (!current.includes(note)) {
+        // A note from the step just finished is a re-strike, not a mistake —
+        // fingers land untidily and punishing that teaches nothing.
+        if (previous.includes(note)) return
         wrongRef.current += 1
         setFlash('wrong')
         // The prompt stays. Getting it wrong is information, not a failure, and
@@ -133,23 +146,46 @@ export function PracticeView() {
         return
       }
 
-      // Every note of the chord has to be down at once, which is the difference
-      // between reading a chord and reading three notes in a row.
-      const complete = prompt.pitches.every((p) => heldRef.current.has(p))
-      if (!complete) {
+      heldRef.current.add(note)
+
+      /*
+       * A step is done when all of its notes are down at once — the difference
+       * between reading a chord and reading three notes in a row.
+       *
+       * Checked only on a note that belongs to the current step, which is what
+       * makes a repeated note work: with the note still held from the step
+       * before, the set would already look complete, and the phrase would run
+       * itself. Requiring the press to be part of this step forces a real
+       * re-strike.
+       */
+      if (!current.every((p) => heldRef.current.has(p))) {
+        setFlash('none')
+        return
+      }
+
+      const next = stepRef.current + 1
+      stepRef.current = next
+      setStep(next)
+
+      if (next < steps.length) {
+        // Held notes are not cleared: playing a phrase legato is correct, and
+        // the next step is judged on its own notes being down, not on the
+        // previous ones being up.
         setFlash('none')
         return
       }
 
       settling.current = true
       setFlash('right')
-      const attempt: Attempt = {
-        promptId: prompt.id,
-        pitches: prompt.pitches,
-        ms: Math.round(performance.now() - shownAt.current),
-        wrong: wrongRef.current,
-      }
-      setAttempts((list) => [...list, attempt])
+      setAttempts((list) => [
+        ...list,
+        {
+          promptId: prompt.id,
+          pitches: pitchesOf(prompt),
+          ms: Math.round(performance.now() - shownAt.current),
+          wrong: wrongRef.current,
+        },
+      ])
       window.setTimeout(() => {
         setIndex((i) => i + 1)
         beginPrompt()
@@ -157,37 +193,42 @@ export function PracticeView() {
     })
 
     return stop
-  }, [running, prompt, beginPrompt])
+  }, [stage, prompt, beginPrompt])
 
-  // A fresh prompt restarts the clock. Keyed on the prompt itself so a config
-  // change mid-run does not leave the timer measuring the previous one.
+  // A fresh prompt restarts the clock. Keyed on the prompt so a settings change
+  // mid-run does not leave the timer measuring the previous one.
   useEffect(() => {
-    if (running && prompt) beginPrompt()
+    if (stage === 'running' && prompt) beginPrompt()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt?.id])
 
+  // Finishing the last prompt ends the run, and a level's result is recorded.
+  useEffect(() => {
+    if (stage !== 'running' || prompts.length === 0 || index < prompts.length) return
+    const clean = attempts.filter((a) => a.wrong === 0).length / Math.max(1, attempts.length)
+    if (level) setProgress((p) => recordResult(p, level.id, clean))
+    setStage('summary')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, prompts.length, stage])
+
   const support = midiSupport()
   const summary = useMemo(() => summarise(attempts), [attempts])
+  const unlocked = unlockedCount(progress)
 
   /**
    * The user's theme, with the four things a drill wants differently.
    *
    * Not a different look — every colour, shape, label and notation choice is
    * theirs, because reading *their* notation is the whole exercise. Only the
-   * page furniture changes:
-   *
-   *   - Much larger. A prompt is read from a music stand at arm's length, and it
-   *     is one note; there is no reason for it to be score-sized.
-   *   - No bar number. There is one bar and it is not a piece.
-   *   - Unjustified. Justification stretches a bar to the page width, which for
-   *     one whole note means the note at the far left of an empty acre.
-   *   - One bar per line, so nothing else can arrive beside it.
+   * page furniture changes: much larger, since a prompt is one bar read from a
+   * stand; no bar number, since it is not a piece; unjustified, so the bar takes
+   * the room it needs rather than stretching to the page; and one bar per line so
+   * nothing can arrive beside it.
    */
   const promptTheme = useMemo(() => {
     const laneHeight = Math.max(theme.layout.laneHeight, 13)
     // Spacing's unit is in pixels rather than staff spaces, so enlarging the
-    // staff without enlarging it too would keep the gaps at their old size and
-    // read as cramped. Scale it by the same factor the staff grew by.
+    // staff without enlarging it too would keep the old gaps and read as cramped.
     const grew = laneHeight / Math.max(1, theme.layout.laneHeight)
     return {
       ...theme,
@@ -203,33 +244,54 @@ export function PracticeView() {
     }
   }, [theme])
 
-  // Narrow, so an unjustified bar takes the room it needs rather than the room
-  // it was given — but not so narrow that the clef, key and time signature have
-  // to share space with the note they are supposed to precede.
+  // Wide enough for four quarters plus a clef, key and time signature, narrow
+  // enough that an unjustified bar does not sit in an acre of nothing.
   const layout = useMemo(
-    () => (prompt ? layoutScore(prompt.score, promptTheme, 330) : null),
+    () => (prompt ? layoutScore(prompt.score, promptTheme, 330 + prompt.steps.length * 46) : null),
     [prompt, promptTheme],
   )
 
+  /**
+   * Light the steps already played.
+   *
+   * What has been done, not what comes next. Lighting the next note would turn
+   * a reading drill into a follow-the-dot game, but showing the phrase filling
+   * in behind you is the thing that makes a four-note prompt feel like progress
+   * rather than four chances to fail.
+   */
+  const activeIds = useMemo(() => {
+    const ids = new Set<string>()
+    if (!prompt) return ids
+    for (let i = 0; i < step; i += 1) {
+      for (let j = 0; j < prompt.steps[i].length; j += 1) ids.add(`${prompt.id}-${i}-${j}`)
+    }
+    return ids
+  }, [prompt, step])
+
   const patch = (next: Partial<DrillConfig>) => {
     setConfig((c) => ({ ...c, ...next }))
-    setRunning(false)
-    setAttempts([])
-    setIndex(0)
   }
+
+  const ready = support.ok && midi.connected && midi.devices.length > 0
+  const passed = level ? summary.clean / Math.max(1, summary.total) >= level.pass : false
 
   return (
     <div className="practice" style={{ background: theme.surface.background }}>
       <header className="practice__top" style={{ color: theme.surface.text }}>
-        <span className="practice__title">Rapid fire</span>
+        <span className="practice__title">
+          {stage === 'running' && level ? level.name : 'Rapid fire'}
+        </span>
         <span className="practice__spacer" />
-        {running && !done && (
+        {stage === 'running' && (
           <span className="practice__count">
             {index + 1} <i>/</i> {prompts.length}
           </span>
         )}
-        <button className="read__btn read__btn--text" onClick={() => setScreen('score')}>
-          Done
+        <button
+          className="read__btn read__btn--text"
+          onClick={() => (stage === 'running' ? setStage('menu') : setScreen('score'))}
+        >
+          {stage === 'running' ? 'Stop' : 'Done'}
         </button>
       </header>
 
@@ -243,40 +305,16 @@ export function PracticeView() {
               Diagnose
             </button>
           </div>
-        ) : !midi.connected || midi.devices.length === 0 ? (
-          <div className="practice__intro">
-            <p className="practice__note" style={{ color: theme.surface.muted }}>
-              {midi.connected
-                ? 'Connected, but no keyboard is sending anything.'
-                : 'Connect a keyboard and play what you see. Prompts are drawn in your own style, so this is practice at reading the notation you designed.'}
-            </p>
-
-            {/* The one readout that separates "not connected" from "connected
-                and silent". Everything else in the app only reacts to a note
-                that matches something, so none of it can tell those apart. */}
-            {midi.connected && (
-              <p className="practice__note" style={{ color: theme.surface.muted }}>
-                {midi.noteCount > 0
-                  ? `${midi.noteCount} notes received — last was ${noteName(spellPitch(midi.lastNote ?? 60, key), true)}`
-                  : 'Nothing received yet. Over USB this works straight away; over Bluetooth, Android’s own pairing screen does not switch MIDI on, so the piano has to be connected from inside an app.'}
-              </p>
-            )}
-
-            <div className="practice__actions">
-              <button className="pill pill--accent" onClick={() => void connectMidi()}>
-                {midi.connected ? 'Look again' : 'Connect by cable'}
-              </button>
-              {bluetoothSupport().ok && (
-                <button className="pill pill--solid" onClick={() => void connectBluetooth()}>
-                  Bluetooth
-                </button>
-              )}
-              <button className="pill pill--solid" onClick={() => setDoctor(true)}>
-                Diagnose
-              </button>
-            </div>
-          </div>
-        ) : done ? (
+        ) : !ready ? (
+          <Connect
+            midi={midi}
+            muted={theme.surface.muted}
+            keyMark={key}
+            onCable={() => void connectMidi()}
+            onBluetooth={() => void connectBluetooth()}
+            onDiagnose={() => setDoctor(true)}
+          />
+        ) : stage === 'summary' ? (
           <div className="practice__summary" style={{ color: theme.surface.text }}>
             <div className="practice__score">
               {summary.clean} <i>/</i> {summary.total}
@@ -284,6 +322,18 @@ export function PracticeView() {
             <div className="practice__stat" style={{ color: theme.surface.muted }}>
               first try · {(summary.median / 1000).toFixed(2)}s typical
             </div>
+            {level && (
+              <div
+                className={`practice__verdict${passed ? ' practice__verdict--pass' : ''}`}
+                style={{ color: passed ? undefined : theme.surface.muted }}
+              >
+                {passed
+                  ? index >= LEVELS.length - 1 || unlocked > LEVELS.indexOf(level) + 1
+                    ? 'Passed'
+                    : 'Passed — next level unlocked'
+                  : `${Math.round(level.pass * 100)}% needed to pass`}
+              </div>
+            )}
             {summary.slowest.length > 0 && (
               <div className="practice__slow" style={{ color: theme.surface.muted }}>
                 slowest to read:{' '}
@@ -293,15 +343,22 @@ export function PracticeView() {
               </div>
             )}
             <div className="practice__actions">
-              <button className="pill pill--accent" onClick={again}>
+              <button
+                className="pill pill--accent"
+                onClick={() => {
+                  setSeed((s) => s + 1)
+                  if (level) startLevel(level)
+                  else startFree()
+                }}
+              >
                 Again
               </button>
-              <button className="pill pill--solid" onClick={() => setRunning(false)}>
-                Change settings
+              <button className="pill pill--solid" onClick={() => setStage('menu')}>
+                Levels
               </button>
             </div>
           </div>
-        ) : running && prompt && layout ? (
+        ) : stage === 'running' && prompt && layout ? (
           <div className={`practice__prompt practice__prompt--${flash}`}>
             <ScoreView
               score={prompt.score}
@@ -309,104 +366,266 @@ export function PracticeView() {
               layout={layout}
               playheadBeat={-1}
               playing={false}
-              activeIds={new Set()}
+              activeIds={activeIds}
               selectedId={null}
               cvd={cvd}
               onSelectNote={() => {}}
             />
           </div>
+        ) : stage === 'free' ? (
+          <FreePlay
+            config={config}
+            keyMark={key}
+            patch={patch}
+            onStart={startFree}
+            onBack={() => setStage('menu')}
+          />
         ) : (
-          <div className="practice__setup">
-            <Group label="What to read">
-              <Field name="Prompt">
-                <Pills
-                  fill
-                  options={[
-                    { value: 'note', label: 'Single notes' },
-                    { value: 'chord', label: 'Chords' },
-                  ]}
-                  value={config.kind}
-                  onChange={(kind) => patch({ kind })}
-                />
-              </Field>
-              <Field name="Hand">
-                <Pills
-                  fill
-                  options={[
-                    { value: 'right', label: 'Right' },
-                    { value: 'left', label: 'Left' },
-                    { value: 'both', label: 'Both' },
-                  ]}
-                  value={config.hands}
-                  onChange={(hands) => patch({ hands })}
-                />
-              </Field>
-              <Field name="Notes">
-                <Pills
-                  fill
-                  options={[
-                    { value: 'key', label: `In ${keyLabel(key)}` },
-                    { value: 'all', label: 'All twelve' },
-                  ]}
-                  value={config.inKey ? 'key' : 'all'}
-                  onChange={(v) => patch({ inKey: v === 'key' })}
-                />
-              </Field>
-            </Group>
-
-            <Group label="How much">
-              <Range
-                name="Prompts"
-                display={`${config.length}`}
-                min={5}
-                max={60}
-                value={config.length}
-                onChange={(length) => patch({ length })}
-              />
-              {config.kind === 'chord' && (
-                <Range
-                  name="Notes per chord"
-                  display={`${config.chordSize}`}
-                  min={2}
-                  max={5}
-                  value={config.chordSize}
-                  onChange={(chordSize) => patch({ chordSize })}
-                />
-              )}
-              <Range
-                name="Lowest"
-                display={noteName(spellPitch(config.low, key), true)}
-                min={36}
-                max={84}
-                value={config.low}
-                onChange={(low) => patch({ low: Math.min(low, config.high - 4) })}
-              />
-              <Range
-                name="Highest"
-                display={noteName(spellPitch(config.high, key), true)}
-                min={40}
-                max={96}
-                value={config.high}
-                onChange={(high) => patch({ high: Math.max(high, config.low + 4) })}
-              />
-            </Group>
-
-            <div className="practice__actions">
-              <button className="pill pill--accent" onClick={start}>
-                Start
-              </button>
-            </div>
-          </div>
+          <Levels
+            progress={progress}
+            unlocked={unlocked}
+            surface={theme.surface}
+            onPick={startLevel}
+            onFree={() => setStage('free')}
+          />
         )}
       </div>
 
       {doctor && <MidiDoctor onClose={() => setDoctor(false)} />}
 
-      {running && !done && (
+      {stage === 'running' && prompt && (
         <div className="practice__hint" style={{ color: theme.surface.muted }}>
-          {config.kind === 'chord' ? 'play every note together' : 'play what you see'}
+          {prompt.steps.length > 1
+            ? 'play them in order'
+            : prompt.steps[0].length > 1
+              ? 'play every note together'
+              : 'play what you see'}
         </div>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * The course.
+ *
+ * Every colour here comes from the score's own surface rather than the app's
+ * chrome variables. The screen is painted with the page colour, so a card built
+ * from --surface-2 is the dark chrome sitting on a white page — and the text on
+ * it, taken from the same theme, was dark ink on a dark card and simply could not
+ * be read. One screen, one palette.
+ */
+function Levels({
+  progress,
+  unlocked,
+  surface,
+  onPick,
+  onFree,
+}: {
+  progress: Progress
+  unlocked: number
+  surface: Theme['surface']
+  onPick(level: Level): void
+  onFree(): void
+}) {
+  const card = { background: surface.panel, color: surface.text }
+  return (
+    <div className="levels">
+      {LEVELS.map((level, i) => {
+        const best = progress.best[level.id] ?? 0
+        const done = best >= level.pass
+        const open = i < unlocked
+        return (
+          <button
+            key={level.id}
+            className={`level${done ? ' level--done' : ''}${open ? '' : ' level--locked'}`}
+            onClick={() => open && onPick(level)}
+            disabled={!open}
+            style={card}
+          >
+            <span className="level__mark" style={{ background: surface.grid }}>
+              {done ? '✓' : open ? i + 1 : '·'}
+            </span>
+            <span className="level__body">
+              <span className="level__name">{level.name}</span>
+              <span className="level__goal" style={{ color: surface.muted }}>
+                {open ? level.goal : 'Pass the level before this one to open it.'}
+              </span>
+            </span>
+            {best > 0 && (
+              <span className="level__best" style={{ color: surface.muted }}>
+                {Math.round(best * 100)}%
+              </span>
+            )}
+          </button>
+        )
+      })}
+
+      <button className="level level--free" onClick={onFree} style={card}>
+        <span className="level__mark" style={{ boxShadow: `inset 0 0 0 1px ${surface.grid}` }}>
+          ∞
+        </span>
+        <span className="level__body">
+          <span className="level__name">Free play</span>
+          <span className="level__goal" style={{ color: surface.muted }}>
+            Single notes or chords, your range, your settings. No passing mark.
+          </span>
+        </span>
+      </button>
+    </div>
+  )
+}
+
+function FreePlay({
+  config,
+  keyMark,
+  patch,
+  onStart,
+  onBack,
+}: {
+  config: DrillConfig
+  keyMark: ReturnType<typeof keyAt>
+  patch(next: Partial<DrillConfig>): void
+  onStart(): void
+  onBack(): void
+}) {
+  return (
+    <div className="practice__setup">
+      <Group label="What to read">
+        <Field name="Prompt">
+          <Pills
+            fill
+            options={[
+              { value: 'note', label: 'Single notes' },
+              { value: 'chord', label: 'Chords' },
+            ]}
+            value={config.kind}
+            onChange={(kind) => patch({ kind })}
+          />
+        </Field>
+        <Field name="Hand">
+          <Pills
+            fill
+            options={[
+              { value: 'right', label: 'Right' },
+              { value: 'left', label: 'Left' },
+              { value: 'both', label: 'Both' },
+            ]}
+            value={config.hands}
+            onChange={(hands) => patch({ hands })}
+          />
+        </Field>
+        <Field name="Notes">
+          <Pills
+            fill
+            options={[
+              { value: 'key', label: `In ${keyLabel(keyMark)}` },
+              { value: 'all', label: 'All twelve' },
+            ]}
+            value={config.inKey ? 'key' : 'all'}
+            onChange={(v) => patch({ inKey: v === 'key' })}
+          />
+        </Field>
+      </Group>
+
+      <Group label="How much">
+        <Range
+          name="Prompts"
+          display={`${config.length}`}
+          min={5}
+          max={60}
+          value={config.length}
+          onChange={(length) => patch({ length })}
+        />
+        {config.kind === 'chord' && (
+          <Range
+            name="Notes per chord"
+            display={`${config.chordSize}`}
+            min={2}
+            max={5}
+            value={config.chordSize}
+            onChange={(chordSize) => patch({ chordSize })}
+          />
+        )}
+        <Range
+          name="Lowest"
+          display={noteName(spellPitch(config.low, keyMark), true)}
+          min={36}
+          max={84}
+          value={config.low}
+          onChange={(low) => patch({ low: Math.min(low, config.high - 4) })}
+        />
+        <Range
+          name="Highest"
+          display={noteName(spellPitch(config.high, keyMark), true)}
+          min={40}
+          max={96}
+          value={config.high}
+          onChange={(high) => patch({ high: Math.max(high, config.low + 4) })}
+        />
+      </Group>
+
+      <div className="practice__actions">
+        <button className="pill pill--accent" onClick={onStart}>
+          Start
+        </button>
+        <button className="pill pill--solid" onClick={onBack}>
+          Levels
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function Connect({
+  midi,
+  muted,
+  keyMark,
+  onCable,
+  onBluetooth,
+  onDiagnose,
+}: {
+  midi: ReturnType<typeof useStore.getState>['midi']
+  muted: string
+  keyMark: ReturnType<typeof keyAt>
+  onCable(): void
+  onBluetooth(): void
+  onDiagnose(): void
+}) {
+  return (
+    <div className="practice__intro">
+      <p className="practice__note" style={{ color: muted }}>
+        {midi.connected
+          ? 'Connected, but no keyboard is sending anything.'
+          : 'Connect a keyboard and play what you see. Prompts are drawn in your own style, so this is practice at reading the notation you designed.'}
+      </p>
+
+      {/* The one readout that separates "not connected" from "connected and
+          silent". Everything else only reacts to a note that matches something,
+          so none of it can tell those apart. */}
+      {midi.connected && (
+        <p className="practice__note" style={{ color: muted }}>
+          {midi.noteCount > 0
+            ? `${midi.noteCount} notes received — last was ${noteName(spellPitch(midi.lastNote ?? 60, keyMark), true)}`
+            : 'Nothing received yet. Over USB this works straight away; over Bluetooth, Android’s own pairing screen does not switch MIDI on, so the piano has to be connected from inside an app.'}
+        </p>
+      )}
+
+      <div className="practice__actions">
+        <button className="pill pill--accent" onClick={onCable}>
+          {midi.connected ? 'Look again' : 'Connect by cable'}
+        </button>
+        {bluetoothSupport().ok && (
+          <button className="pill pill--solid" onClick={onBluetooth}>
+            Bluetooth
+          </button>
+        )}
+        <button className="pill pill--solid" onClick={onDiagnose}>
+          Diagnose
+        </button>
+      </div>
     </div>
   )
 }
