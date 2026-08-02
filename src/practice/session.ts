@@ -14,6 +14,8 @@
 import type { Score } from '../core/types'
 import type { MidiConnection, MidiDevice } from '../io/midi'
 import { openMidi } from '../io/midi'
+import type { BleConnection } from '../io/blemidi'
+import { openBluetoothMidi } from '../io/blemidi'
 import type { Follower, FollowerOptions, FollowerSnapshot, Target } from './follower'
 import { DEFAULT_FOLLOWER_OPTIONS, buildTargets, createFollower } from './follower'
 
@@ -51,6 +53,14 @@ export type SessionMode = 'follow' | 'raw'
 
 export interface Session {
   connect(): Promise<void>
+  /**
+   * Connect over Bluetooth instead, by speaking BLE-MIDI directly.
+   *
+   * Separate from connect() because it is a different transport with different
+   * failure modes, and because it must be called straight from a click — the
+   * browser's device chooser will not open otherwise.
+   */
+  connectBluetooth(): Promise<void>
   disconnect(): void
   setMode(mode: SessionMode): void
   /** Tap the raw note stream. Returns an unsubscribe. */
@@ -69,6 +79,7 @@ export function createSession(
   options: FollowerOptions = DEFAULT_FOLLOWER_OPTIONS,
 ): Session {
   let connection: MidiConnection | null = null
+  let bluetooth: BleConnection | null = null
   let follower: Follower | null = null
   let targets: Target[] = []
   let mode: SessionMode = 'follow'
@@ -157,9 +168,37 @@ export function createSession(
       }
     },
 
+    async connectBluetooth() {
+      if (bluetooth) return
+      handlers.onStatus({ error: null })
+      try {
+        bluetooth = await openBluetoothMidi(
+          (event) => handleNote(event.midi, event.on),
+          (reason) => {
+            bluetooth = null
+            handlers.onStatus({ connected: false, devices: [], error: reason })
+          },
+        )
+        handlers.onStatus({
+          connected: true,
+          devices: [{ id: 'ble', name: bluetooth.name, manufacturer: 'Bluetooth' }],
+          error: null,
+        })
+      } catch (error) {
+        bluetooth = null
+        // A cancelled chooser is not a failure — someone closed a dialog — and
+        // reporting it as one would put a red error on screen for a shrug.
+        const message = error instanceof Error ? error.message : 'Could not connect.'
+        const cancelled = error instanceof Error && error.name === 'NotFoundError'
+        handlers.onStatus({ connected: false, error: cancelled ? null : message })
+      }
+    },
+
     disconnect() {
       connection?.close()
       connection = null
+      bluetooth?.close()
+      bluetooth = null
       held.clear()
       lit.clear()
       litByKey.clear()

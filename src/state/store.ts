@@ -163,6 +163,7 @@ interface State {
   showToast: (message: string | null) => void
 
   connectMidi: () => Promise<void>
+  connectBluetooth: () => Promise<void>
   disconnectMidi: () => void
   /** Held keys, matched note ids and follower position, from one key press. */
   setMidiHeld: (held: Set<number>, lit: Set<string>) => void
@@ -345,6 +346,13 @@ export const useStore = create<State>((set, get) => ({
     set({ midi: { ...get().midi, connecting: true, error: null } })
     session.setScore(get().score)
     await session.connect()
+    set({ midi: { ...get().midi, connecting: false } })
+  },
+
+  connectBluetooth: async () => {
+    set({ midi: { ...get().midi, connecting: true, error: null } })
+    session.setScore(get().score)
+    await session.connectBluetooth()
     set({ midi: { ...get().midi, connecting: false } })
   },
 

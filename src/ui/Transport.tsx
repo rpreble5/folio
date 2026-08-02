@@ -4,6 +4,7 @@ import { beatToSeconds, beatsPerMeasure, timeSignatureAt } from '../core/types'
 import { player } from '../audio/player'
 import { Slider } from './controls'
 import { midiSupport } from '../io/midi'
+import { bluetoothSupport } from '../io/blemidi'
 import { MidiDoctor } from './MidiDoctor'
 
 function formatTime(seconds: number): string {
@@ -23,7 +24,9 @@ export function Transport() {
   const connectMidi = useStore((s) => s.connectMidi)
   const disconnectMidi = useStore((s) => s.disconnectMidi)
   const setFollowing = useStore((s) => s.setFollowing)
+  const connectBluetooth = useStore((s) => s.connectBluetooth)
   const support = midiSupport()
+  const ble = bluetoothSupport()
   const [doctor, setDoctor] = useState(false)
 
   const barLength = beatsPerMeasure(timeSignatureAt(score, playheadBeat))
@@ -121,6 +124,22 @@ export function Transport() {
                 midi.devices.length === 0
                 ? 'No keyboard found'
                 : (midi.devices[0]?.name ?? 'Keyboard')}
+        </button>
+      )}
+
+      {/* Bluetooth is a second transport, not a fallback hidden behind a
+          failure: on Android it is the only way a wireless keyboard can work at
+          all, since Web MIDI does not reach one and the system pairing screen
+          does not switch MIDI on. Offered whenever it could work and nothing is
+          connected yet. */}
+      {ble.ok && !midi.connected && (
+        <button
+          className="keyboard-btn"
+          onClick={() => void connectBluetooth()}
+          disabled={midi.connecting}
+          title="Connect a Bluetooth keyboard directly. Close the manufacturer’s own app first — an instrument can only hold one connection."
+        >
+          Bluetooth
         </button>
       )}
 

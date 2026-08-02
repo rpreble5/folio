@@ -29,6 +29,7 @@ import {
   type Prompt,
 } from '../practice/drills'
 import { midiSupport } from '../io/midi'
+import { bluetoothSupport } from '../io/blemidi'
 import { MidiDoctor } from './MidiDoctor'
 import { Field, Group, Pills, Range } from './controls'
 
@@ -42,6 +43,7 @@ export function PracticeView() {
   const midi = useStore((s) => s.midi)
   const setScreen = useStore((s) => s.setScreen)
   const connectMidi = useStore((s) => s.connectMidi)
+  const connectBluetooth = useStore((s) => s.connectBluetooth)
 
   const [config, setConfig] = useState<DrillConfig>(DEFAULT_DRILL)
   const [seed, setSeed] = useState(1)
@@ -256,8 +258,13 @@ export function PracticeView() {
 
             <div className="practice__actions">
               <button className="pill pill--accent" onClick={() => void connectMidi()}>
-                {midi.connected ? 'Look again' : 'Connect keyboard'}
+                {midi.connected ? 'Look again' : 'Connect by cable'}
               </button>
+              {bluetoothSupport().ok && (
+                <button className="pill pill--solid" onClick={() => void connectBluetooth()}>
+                  Bluetooth
+                </button>
+              )}
               <button className="pill pill--solid" onClick={() => setDoctor(true)}>
                 Diagnose
               </button>

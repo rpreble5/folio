@@ -25,3 +25,5 @@ practice-*.png
 .diagcheck.mjs
 .doctorcheck.mjs
 .err.mjs
+.blecheck.mjs
+.blelive.mjs
