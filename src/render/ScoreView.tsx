@@ -582,8 +582,12 @@ function beatTicks(start: number, end: number): number[] {
 /**
  * Which ledger lines a note needs. Lines live on even diatonic indices; middle
  * C is the lone line in the gap between the staves.
+ *
+ * Exported because anything drawn *over* a staff needs the same answer — a note
+ * five ledger lines up is unreadable without them, and a second copy of this
+ * rule would be a second chance to disagree with the staff underneath it.
  */
-function ledgerIndices(index: number): number[] {
+export function ledgerIndices(index: number): number[] {
   const out: number[] = []
   if (index === 28) return [28]
   if (index >= 40) {

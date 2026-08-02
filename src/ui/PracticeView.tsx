@@ -34,11 +34,23 @@ import { loadProgress, recordResult, unlockedCount, type Progress } from '../pra
 import { midiSupport } from '../io/midi'
 import { bluetoothSupport } from '../io/blemidi'
 import { MidiDoctor } from './MidiDoctor'
+import { GhostNote } from './GhostNote'
 import { Field, Group, Pills, Range } from './controls'
 import type { Theme } from '../core/theme'
 
 /** How long the "right" flash sits before the next prompt. */
 const SETTLE_MS = 170
+
+/**
+ * How long on one step before a wrong note is shown back to you.
+ *
+ * Time rather than a count of mistakes, and the difference matters. Counting
+ * mistakes helps whoever makes them fastest: hammer five keys in two seconds and
+ * the answer appears, sit and think for eight and it does not. That is precisely
+ * backwards. A clock helps the person who is stuck and gives the guesser nothing,
+ * because a guesser is never stuck for four seconds.
+ */
+const STUCK_MS = 4000
 
 type Stage = 'menu' | 'free' | 'running' | 'summary'
 
@@ -59,6 +71,10 @@ export function PracticeView() {
   const [step, setStep] = useState(0)
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [flash, setFlash] = useState<'none' | 'right' | 'wrong'>('none')
+  // The most recent wrong note on the step in front of the player, and whether
+  // they have been on it long enough to be shown it.
+  const [lastWrong, setLastWrong] = useState<number | null>(null)
+  const [stuck, setStuck] = useState(false)
   const [doctor, setDoctor] = useState(false)
   const [progress, setProgress] = useState<Progress>(() => loadProgress())
 
@@ -83,6 +99,8 @@ export function PracticeView() {
     settling.current = false
     setStep(0)
     setFlash('none')
+    setLastWrong(null)
+    setStuck(false)
   }, [])
 
   const startLevel = (next: Level) => {
@@ -141,6 +159,7 @@ export function PracticeView() {
         if (previous.includes(note)) return
         wrongRef.current += 1
         setFlash('wrong')
+        setLastWrong(note)
         // The prompt stays. Getting it wrong is information, not a failure, and
         // moving on would rob the answer of the one thing it is for.
         return
@@ -166,6 +185,8 @@ export function PracticeView() {
       const next = stepRef.current + 1
       stepRef.current = next
       setStep(next)
+      setLastWrong(null)
+      setStuck(false)
 
       if (next < steps.length) {
         // Held notes are not cleared: playing a phrase legato is correct, and
@@ -194,6 +215,32 @@ export function PracticeView() {
 
     return stop
   }, [stage, prompt, beginPrompt])
+
+  /**
+   * Let the wrong-note wash fade.
+   *
+   * It is a flash, and it was staying lit for as long as someone was stuck —
+   * a permanent red tint under the music, competing with the ghost that arrives
+   * a moment later. Being wrong should be a beat, not a state.
+   */
+  useEffect(() => {
+    if (flash !== 'wrong') return
+    const timer = window.setTimeout(() => setFlash('none'), 700)
+    return () => window.clearTimeout(timer)
+  }, [flash, lastWrong])
+
+  /**
+   * Start the stuck clock for each step.
+   *
+   * Keyed on the step as well as the prompt, so a four-note phrase gives four
+   * independent chances to be helped rather than one clock running the whole bar.
+   */
+  useEffect(() => {
+    if (stage !== 'running' || !prompt) return
+    setStuck(false)
+    const timer = window.setTimeout(() => setStuck(true), STUCK_MS)
+    return () => window.clearTimeout(timer)
+  }, [stage, prompt?.id, step])
 
   // A fresh prompt restarts the clock. Keyed on the prompt so a settings change
   // mid-run does not leave the timer measuring the previous one.
@@ -267,6 +314,21 @@ export function PracticeView() {
     }
     return ids
   }, [prompt, step])
+
+  /**
+   * Where the step being answered is, in the layout's coordinates.
+   *
+   * Taken from the placed note rather than recomputed: the ghost has to sit
+   * beside the real thing, and the only way to be sure of that is to ask the
+   * layout where it put it.
+   */
+  const stepX = useMemo(() => {
+    if (!layout || !prompt) return null
+    const placed = layout.systems[0]?.notes.find((n) =>
+      n.note.id.startsWith(`${prompt.id}-${step}-`),
+    )
+    return placed ? placed.x : null
+  }, [layout, prompt, step])
 
   const patch = (next: Partial<DrillConfig>) => {
     setConfig((c) => ({ ...c, ...next }))
@@ -360,17 +422,32 @@ export function PracticeView() {
           </div>
         ) : stage === 'running' && prompt && layout ? (
           <div className={`practice__prompt practice__prompt--${flash}`}>
-            <ScoreView
-              score={prompt.score}
-              theme={promptTheme}
-              layout={layout}
-              playheadBeat={-1}
-              playing={false}
-              activeIds={activeIds}
-              selectedId={null}
-              cvd={cvd}
-              onSelectNote={() => {}}
-            />
+            {/* The ghost is painted over this stack rather than added to the
+                score, so the music never moves when the hint appears. */}
+            <div className="prompt-stack">
+              <ScoreView
+                score={prompt.score}
+                theme={promptTheme}
+                layout={layout}
+                playheadBeat={-1}
+                playing={false}
+                activeIds={activeIds}
+                selectedId={null}
+                cvd={cvd}
+                onSelectNote={() => {}}
+              />
+              {stuck && lastWrong !== null && stepX !== null && (
+                <GhostNote
+                  layout={layout}
+                  theme={promptTheme}
+                  key={`${prompt.id}-${step}-${lastWrong}`}
+                  keyMark={key}
+                  x={stepX}
+                  midi={lastWrong}
+                  beats={prompt.steps.length === 1 ? 4 : 1}
+                />
+              )}
+            </div>
           </div>
         ) : stage === 'free' ? (
           <FreePlay

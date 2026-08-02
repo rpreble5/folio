@@ -2306,3 +2306,29 @@ body {
 .practice__verdict--pass {
   color: #6ee7a8;
 }
+
+/*
+ * The ghost sits exactly over the prompt, so the two share an origin. A wrapper
+ * with no padding of its own is what makes `inset: 0` mean "the same place the
+ * score starts" rather than "the same place the padding starts".
+ */
+.prompt-stack {
+  position: relative;
+  line-height: 0;
+}
+
+.ghost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  animation: ghost-in 260ms var(--ease) forwards;
+}
+
+/* Fading in rather than appearing: something that snaps into existence beside
+   the note you are reading pulls the eye off it. */
+@keyframes ghost-in {
+  to {
+    opacity: 0.42;
+  }
+}

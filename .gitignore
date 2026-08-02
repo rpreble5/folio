@@ -29,3 +29,6 @@ practice-*.png
 .blelive.mjs
 .pwacheck.mjs
 .levelcheck.mjs
+.ghostcheck.mjs
+.ghostshot.mjs
+ghost.png
