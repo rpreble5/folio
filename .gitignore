@@ -23,3 +23,5 @@ dist
 .practiceshot.mjs
 practice-*.png
 .diagcheck.mjs
+.doctorcheck.mjs
+.err.mjs

@@ -29,6 +29,7 @@ import {
   type Prompt,
 } from '../practice/drills'
 import { midiSupport } from '../io/midi'
+import { MidiDoctor } from './MidiDoctor'
 import { Field, Group, Pills, Range } from './controls'
 
 /** How long the "right" flash sits before the next prompt. */
@@ -48,6 +49,7 @@ export function PracticeView() {
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [flash, setFlash] = useState<'none' | 'right' | 'wrong'>('none')
   const [running, setRunning] = useState(false)
+  const [doctor, setDoctor] = useState(false)
 
   const key = useMemo(() => keyAt(score, 0), [score])
   const prompts = useMemo(
@@ -225,9 +227,14 @@ export function PracticeView() {
 
       <div className="practice__stage">
         {!support.ok ? (
-          <p className="practice__note" style={{ color: theme.surface.muted }}>
-            {support.reason}
-          </p>
+          <div className="practice__intro">
+            <p className="practice__note" style={{ color: theme.surface.muted }}>
+              {support.reason}
+            </p>
+            <button className="pill pill--solid" onClick={() => setDoctor(true)}>
+              Diagnose
+            </button>
+          </div>
         ) : !midi.connected || midi.devices.length === 0 ? (
           <div className="practice__intro">
             <p className="practice__note" style={{ color: theme.surface.muted }}>
@@ -247,9 +254,14 @@ export function PracticeView() {
               </p>
             )}
 
-            <button className="pill pill--accent" onClick={() => void connectMidi()}>
-              {midi.connected ? 'Look again' : 'Connect keyboard'}
-            </button>
+            <div className="practice__actions">
+              <button className="pill pill--accent" onClick={() => void connectMidi()}>
+                {midi.connected ? 'Look again' : 'Connect keyboard'}
+              </button>
+              <button className="pill pill--solid" onClick={() => setDoctor(true)}>
+                Diagnose
+              </button>
+            </div>
           </div>
         ) : done ? (
           <div className="practice__summary" style={{ color: theme.surface.text }}>
@@ -374,6 +386,8 @@ export function PracticeView() {
           </div>
         )}
       </div>
+
+      {doctor && <MidiDoctor onClose={() => setDoctor(false)} />}
 
       {running && !done && (
         <div className="practice__hint" style={{ color: theme.surface.muted }}>

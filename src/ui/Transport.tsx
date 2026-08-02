@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { useStore } from '../state/store'
 import { beatToSeconds, beatsPerMeasure, timeSignatureAt } from '../core/types'
 import { player } from '../audio/player'
 import { Slider } from './controls'
 import { midiSupport } from '../io/midi'
+import { MidiDoctor } from './MidiDoctor'
 
 function formatTime(seconds: number): string {
   const total = Math.max(0, Math.round(seconds))
@@ -22,6 +24,7 @@ export function Transport() {
   const disconnectMidi = useStore((s) => s.disconnectMidi)
   const setFollowing = useStore((s) => s.setFollowing)
   const support = midiSupport()
+  const [doctor, setDoctor] = useState(false)
 
   const barLength = beatsPerMeasure(timeSignatureAt(score, playheadBeat))
   const bar = Math.floor(playheadBeat / barLength) + 1
@@ -83,10 +86,18 @@ export function Transport() {
         bar {Math.min(bar, totalBars)} of {totalBars}
       </div>
 
-      {/* Hidden entirely where MIDI cannot work, rather than shown disabled: a
-          greyed button on an iPad invites a tap that can only ever fail, and the
-          reason is the browser, which the player cannot do anything about. */}
-      {support.ok && (
+      {/* Always shown, even where MIDI cannot work.
+          It used to be hidden when unsupported, on the reasoning that a button
+          which can only fail is worse than no button. That was wrong: it left
+          someone whose page was not on https with no control and no explanation,
+          which is the single most confusing way to fail. The button now opens the
+          diagnostics instead, which is exactly what is wanted at that moment. */}
+      {!support.ok ? (
+        <button className="keyboard-btn" onClick={() => setDoctor(true)} title={support.reason}>
+          <span className="keyboard-btn__dot" />
+          Keyboard unavailable
+        </button>
+      ) : (
         <button
           className={`keyboard-btn${midi.connected ? ' keyboard-btn--live' : ''}`}
           onClick={() => (midi.connected ? disconnectMidi() : void connectMidi())}
@@ -112,6 +123,16 @@ export function Transport() {
                 : (midi.devices[0]?.name ?? 'Keyboard')}
         </button>
       )}
+
+      {/* Offered exactly when something is wrong, rather than sitting there as
+          permanent clutter for the people it will never help. */}
+      {support.ok && (midi.error || (midi.connected && midi.devices.length === 0)) && (
+        <button className="keyboard-btn" onClick={() => setDoctor(true)}>
+          Why?
+        </button>
+      )}
+
+      {doctor && <MidiDoctor onClose={() => setDoctor(false)} />}
 
       {midi.connected && (
         <button
