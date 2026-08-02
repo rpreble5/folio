@@ -26,6 +26,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { session, useStore } from '../state/store'
+import { exitFullscreen, keepAwake } from './screen'
 import { layoutScore } from '../render/layout'
 import { ScoreView } from '../render/ScoreView'
 import { player } from '../audio/player'
@@ -155,20 +156,23 @@ export function ReadView() {
   }, [])
 
   /**
-   * Ask for the whole screen.
+   * Leave fullscreen on the way out.
    *
-   * A reading view with a browser toolbar above it is not a reading view — the
-   * tab strip is the last piece of software in front of the music, and on a
-   * laptop propped on a stand it is a surprising amount of the page. The request
-   * can be refused, and everything works the same if it is, so this never checks
-   * whether it succeeded.
+   * *Entering* it happens in the button that navigates here, not in an effect:
+   * Android refuses a fullscreen request that is not attached to a real gesture,
+   * and an effect running after navigation is not one. Asking here meant the
+   * request was denied every time and the rejection was swallowed — the view has
+   * never actually been fullscreen on a phone.
    */
-  useEffect(() => {
-    void document.documentElement.requestFullscreen?.().catch(() => {})
-    return () => {
-      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {})
-    }
-  }, [])
+  useEffect(() => exitFullscreen, [])
+
+  /**
+   * And keep the screen on.
+   *
+   * A piece takes minutes and a phone locks in less. Fullscreen without this is
+   * a beautiful view that goes black halfway through a piece.
+   */
+  useEffect(keepAwake, [])
 
   const toggle = () => {
     if (playing) {

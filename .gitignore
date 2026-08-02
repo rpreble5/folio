@@ -27,3 +27,4 @@ practice-*.png
 .err.mjs
 .blecheck.mjs
 .blelive.mjs
+.pwacheck.mjs

@@ -2133,3 +2133,80 @@ button {
   gap: 9px;
   margin-top: 14px;
 }
+
+/* ------------------------------------------------------- music stand -- */
+
+/*
+ * A touchscreen propped on a piano is a different device from a laptop, and the
+ * default browser gestures are actively hostile there.
+ *
+ * The one that matters most is pull-to-refresh: a downward swipe anywhere on the
+ * score reloads the page, which mid-piece is the worst thing the app can do. It
+ * is set on `html` as well as `body` because the viewport only inherits the
+ * body's value when the root's is still `auto` — setting it on one is a coin
+ * flip depending on which element the browser decides is scrolling.
+ */
+html {
+  overscroll-behavior: none;
+}
+
+body {
+  /*
+   * Kills the double-tap-to-zoom gesture and, with it, the ~300ms the browser
+   * spends waiting to find out whether a tap was the first of two. Every button
+   * in the app feels slower until this is set.
+   */
+  touch-action: manipulation;
+  /* Android paints a grey box over anything tapped. On a page of music it looks
+     like a rendering fault. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * Nothing on a reading or drilling screen is text to be selected, and a long
+ * press that pops a selection handle over the staff is pure noise. Left alone in
+ * the Studio, where names and values genuinely are worth copying.
+ */
+.read,
+.practice,
+.score {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/*
+ * Notches and gesture bars.
+ *
+ * viewport-fit=cover lets the page reach the physical edges of the screen, which
+ * is what makes a fullscreen reading view fill the glass — and also what lets a
+ * notch land on top of the music. These put the chrome back inside the safe
+ * area without giving the score's own background any margin, so the page still
+ * runs edge to edge while nothing that has to be read hides under a cutout.
+ */
+.topbar {
+  padding-left: max(var(--gap-lg), env(safe-area-inset-left));
+  padding-right: max(var(--gap-lg), env(safe-area-inset-right));
+  padding-top: env(safe-area-inset-top);
+  height: calc(62px + env(safe-area-inset-top));
+}
+
+.read__bar {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+
+.read__hint,
+.practice__hint {
+  padding-bottom: max(26px, calc(env(safe-area-inset-bottom) + 12px));
+}
+
+.practice__top {
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-left: max(22px, env(safe-area-inset-left));
+  padding-right: max(22px, env(safe-area-inset-right));
+}
+
+.read__page,
+.practice__stage {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}

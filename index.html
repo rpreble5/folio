@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0d0f14" />
     <title>Folio — your notation, your way</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <!-- Android colours the status bar from this; the reading views paint over
+         it anyway, but the moment before they mount should not flash white. -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <!-- Inline rather than a file: four notes of the palette, and no request. -->
     <link
       rel="icon"

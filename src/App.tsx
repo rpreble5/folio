@@ -9,6 +9,7 @@ import { Library } from './ui/Library'
 import { StudioPanel } from './ui/StudioPanel'
 import { ReadView } from './ui/ReadView'
 import { PracticeView } from './ui/PracticeView'
+import { enterFullscreen } from './ui/screen'
 import { NotePopover } from './ui/NotePopover'
 import { Transport } from './ui/Transport'
 import { Pills } from './ui/controls'
@@ -244,11 +245,27 @@ export default function App() {
         <button className="pill pill--solid" onClick={() => fileInput.current?.click()}>
           Import
         </button>
-        <button className="pill pill--solid" onClick={() => setScreen('practice')}>
+        {/* Fullscreen is requested here rather than inside the view, because a
+            browser will only grant it from a genuine user gesture — and a click
+            handler is one, while an effect that runs after the navigation is
+            not. */}
+        <button
+          className="pill pill--solid"
+          onClick={() => {
+            enterFullscreen()
+            setScreen('practice')
+          }}
+        >
           Practise
         </button>
 
-        <button className="pill pill--accent" onClick={() => setScreen('read')}>
+        <button
+          className="pill pill--accent"
+          onClick={() => {
+            enterFullscreen()
+            setScreen('read')
+          }}
+        >
           Read
         </button>
         <input

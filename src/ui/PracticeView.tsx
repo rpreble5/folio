@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { session, useStore } from '../state/store'
+import { exitFullscreen, keepAwake } from './screen'
 import { layoutScore } from '../render/layout'
 import { ScoreView } from '../render/ScoreView'
 import { keyAt } from '../core/types'
@@ -103,6 +104,11 @@ export function PracticeView() {
     session.setMode('raw')
     return () => session.setMode('follow')
   }, [])
+
+  // A drill is played at the instrument, so it wants the same treatment as the
+  // reading view: no chrome, and a screen that does not lock between prompts.
+  useEffect(() => exitFullscreen, [])
+  useEffect(keepAwake, [])
 
   useEffect(() => {
     if (!running || !prompt) return
