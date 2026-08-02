@@ -1922,11 +1922,30 @@ button {
  * thing on screen worth looking at. Right is brief and quiet; wrong is quieter
  * still, because the prompt has not gone anywhere and the player can see that.
  */
+/*
+ * The prompt never runs off the screen.
+ *
+ * It is a flex item, and a flex item is allowed to grow past its container —
+ * so a wide prompt (eight chords, each carrying an accidental) simply overhung
+ * the stage and had its last chord cut off by the edge of the window. Capping
+ * it lets the score's own max-width bind, and because the score is an SVG with a
+ * viewBox, binding it means scaling rather than cropping: the music gets smaller
+ * and stays whole, which is the right trade for something that has to be read.
+ *
+ * The ghost overlay scales with it — same box, same viewBox — so the hint still
+ * lands on the note it is reporting on.
+ */
 .practice__prompt {
   border-radius: 18px;
   padding: 10px 18px;
   transition: background var(--dur) var(--ease);
   background: transparent;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.prompt-stack .score {
+  height: auto;
 }
 
 .practice__prompt--right {
@@ -2216,15 +2235,57 @@ body {
 /*
  * The course.
  *
- * A list rather than a grid or a path: eight items in order, where the only
- * question is which one is next. A winding map would be decoration standing
- * between someone and the answer.
+ * A list rather than a grid or a path: items in order, where the only question
+ * is which one is next. A winding map would be decoration standing between
+ * someone and the answer.
+ *
+ * The list must never scroll. Once there were more levels than fit a phone, two
+ * things gave the height back: tabs, which show one section at a time, and cards
+ * that collapse to their name — every level but the one you are about to play,
+ * whose description is the only one worth the room.
  */
 .levels {
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: min(520px, 100%);
+}
+
+/*
+ * Tabs: text and a rule, no boxes.
+ *
+ * A row of filled pills would put four more coloured rectangles above a list of
+ * coloured rectangles. The selected tab is simply the one in full ink with a
+ * line under it, which is legible against any page colour the reader has chosen
+ * — including the ones where a "subtle" tinted background disappears entirely.
+ */
+.levels__tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.levels__tab {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 4px 8px;
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.levels__tab:hover:not(.levels__tab--on) {
+  filter: contrast(1.2);
+}
+
+.levels__tally {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
 }
 
 .level {

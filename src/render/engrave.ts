@@ -138,8 +138,9 @@ function prefixWidth(
  * Mutates the systems in place, matching how the proportional engine fills
  * them, so the two are interchangeable from the caller's side.
  */
-export function engraveSystems(input: EngraveInput): void {
+export function engraveSystems(input: EngraveInput): number {
   const { score, spacing, systems, measuresBySystem, contentWidth, space } = input
+  let reached = contentWidth
 
   // From the glyph, not from the lane height: the rods that keep two heads clear
   // of each other have to be the width of an actual head.
@@ -156,6 +157,11 @@ export function engraveSystems(input: EngraveInput): void {
 
     system.columns = columns
     system.contentStart = prefix
+    // Unjustified, the rods decide the width and the music can end past the
+    // width it was offered. Reporting how far it actually reached is what lets
+    // the caller size the page to the music instead of cropping the music to
+    // the page.
+    reached = Math.max(reached, columns[columns.length - 1]?.x ?? 0)
 
     placeNotes(system, columns, notesByBeat, input, headWidth)
     displaceSeconds(system, input, headWidth)
@@ -164,6 +170,8 @@ export function engraveSystems(input: EngraveInput): void {
     placeMeasures(system, columns, measures, contentWidth)
     placeRests(system, columns, restsByBeat, score, input)
   }
+
+  return reached
 }
 
 /**

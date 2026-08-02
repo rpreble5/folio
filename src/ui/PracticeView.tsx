@@ -31,7 +31,7 @@ import {
   type DrillConfig,
   type Prompt,
 } from '../practice/drills'
-import { LEVELS, type Level } from '../practice/levels'
+import { LEVELS, LEVEL_GROUPS, type Level, type LevelGroup } from '../practice/levels'
 import { loadProgress, recordResult, unlockedCount, type Progress } from '../practice/progress'
 import { midiSupport } from '../io/midi'
 import { bluetoothSupport } from '../io/blemidi'
@@ -610,28 +610,82 @@ function Levels({
   onFree(): void
 }) {
   const card = { background: surface.panel, color: surface.text }
+  const done = (level: Level) => (progress.best[level.id] ?? 0) >= level.pass
+
+  /*
+   * The level you would play next: the first one open and not yet passed, or —
+   * once everything open has been passed — the one waiting to unlock. There is
+   * always exactly one, which is the whole point of a single chain.
+   */
+  const next = (() => {
+    const unfinished = LEVELS.findIndex((l, i) => i < unlocked && !done(l))
+    return unfinished >= 0 ? unfinished : Math.min(unlocked, LEVELS.length - 1)
+  })()
+  const [tab, setTab] = useState<LevelGroup>(LEVELS[next].group)
+
+  const shown = LEVELS.map((level, i) => ({ level, i })).filter((e) => e.level.group === tab)
+  // One expanded card per tab, and never none: the level you would play next if
+  // it is in this tab, otherwise whichever of these you would reach first. A tab
+  // whose levels are all locked still has to say what it is for.
+  const focus = shown.some((e) => e.i === next) ? next : (shown[0]?.i ?? -1)
+
   return (
     <div className="levels">
-      {LEVELS.map((level, i) => {
+      <div className="levels__tabs" role="tablist">
+        {LEVEL_GROUPS.map((group) => {
+          const mine = LEVELS.filter((l) => l.group === group)
+          const passed = mine.filter(done).length
+          const on = group === tab
+          return (
+            <button
+              key={group}
+              role="tab"
+              aria-selected={on}
+              className={`levels__tab${on ? ' levels__tab--on' : ''}`}
+              style={{
+                color: on ? surface.text : surface.muted,
+                // The underline is the only thing that moves, and it is drawn in
+                // the reader's accent so the control belongs to their palette
+                // rather than to the app's chrome.
+                boxShadow: on ? `inset 0 -2px 0 0 ${surface.accent}` : 'none',
+              }}
+              onClick={() => setTab(group)}
+            >
+              {group}
+              <span className="levels__tally" style={{ color: surface.muted }}>
+                {passed}/{mine.length}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {shown.map(({ level, i }) => {
         const best = progress.best[level.id] ?? 0
-        const done = best >= level.pass
+        const passed = done(level)
         const open = i < unlocked
         return (
           <button
             key={level.id}
-            className={`level${done ? ' level--done' : ''}${open ? '' : ' level--locked'}`}
+            className={`level${passed ? ' level--done' : ''}${open ? '' : ' level--locked'}`}
             onClick={() => open && onPick(level)}
             disabled={!open}
             style={card}
           >
             <span className="level__mark" style={{ background: surface.grid }}>
-              {done ? '✓' : open ? i + 1 : '·'}
+              {passed ? '✓' : open ? i + 1 : '·'}
             </span>
             <span className="level__body">
               <span className="level__name">{level.name}</span>
-              <span className="level__goal" style={{ color: surface.muted }}>
-                {open ? level.goal : 'Pass the level before this one to open it.'}
-              </span>
+              {/* Only the one you are on explains itself. Thirteen cards each
+                  carrying a line of description is a list nobody can see the
+                  end of, and the twelve you are not about to play are the ones
+                  whose description you do not need. */}
+              {i === focus && (
+                <span className="level__goal" style={{ color: surface.muted }}>
+                  {open ? level.goal : `${level.goal} — pass the level before it to open this.`}
+                </span>
+              )}
             </span>
             {best > 0 && (
               <span className="level__best" style={{ color: surface.muted }}>
@@ -648,9 +702,6 @@ function Levels({
         </span>
         <span className="level__body">
           <span className="level__name">Free play</span>
-          <span className="level__goal" style={{ color: surface.muted }}>
-            Single notes or chords, your range, your settings. No passing mark.
-          </span>
         </span>
       </button>
     </div>

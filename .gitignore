@@ -37,3 +37,6 @@ ghost.png
 .demoshot.mjs
 demo-*.png
 .barcheck.mjs
+.jazzcheck.mjs
+.tabcheck.mjs
+.fitcheck.mjs

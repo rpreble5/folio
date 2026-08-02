@@ -275,9 +275,19 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
     top += systemInnerHeight + cfg.systemGap
   }
 
+  /*
+   * How far the music actually reaches.
+   *
+   * Normally the width it was offered. Unjustified engraving is the exception:
+   * the rods set the spacing and the last column can land past the edge, so the
+   * page has to grow to it — sizing the page to the requested width instead
+   * clips whatever ran over, and an SVG clips silently.
+   */
+  let usedWidth = contentWidth
+
   if (cfg.spacing) {
     // Engraved: columns, springs and rods. Fills notes, rests and measures.
-    engraveSystems({
+    usedWidth = engraveSystems({
       score,
       theme,
       spacing: cfg.spacing,
@@ -378,8 +388,9 @@ export function layoutScore(score: Score, theme: Theme, availableWidth: number):
 
   return {
     systems,
-    // A full line now spans contentWidth exactly, so the page is the section.
-    width: gutter + contentWidth + rightPad,
+    // A justified line spans contentWidth exactly, so the page is the section.
+    // An unjustified one may reach further, and the page follows it.
+    width: gutter + Math.max(contentWidth, usedWidth) + rightPad,
     height,
     gutter,
     laneHeight,

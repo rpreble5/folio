@@ -12,7 +12,7 @@
  * is possible with Math.random.
  */
 
-import type { KeyMark, NoteEvent, NoteType, RestEvent, Score } from '../core/types'
+import type { BeamState, KeyMark, NoteEvent, NoteType, RestEvent, Score } from '../core/types'
 import { markBarStarts } from '../core/types'
 import { pitchClass, printedAccidental, spellPitch, spellPitchWith } from '../core/pitch'
 
@@ -160,6 +160,31 @@ export function scoreFor(
   const type = (b: number): NoteType =>
     b >= 4 ? 'whole' : b >= 2 ? 'half' : b >= 1 ? 'quarter' : 'eighth'
 
+  /*
+   * Beam anything shorter than a beat.
+   *
+   * Eight separate flags is not how eighth notes are written, and the reason is
+   * not decoration: a beamed group is read as one shape, which is the whole
+   * difference between reading a run and reading eight notes that happen to be
+   * adjacent.
+   *
+   * Eighths are beamed across the half bar and anything shorter across the
+   * beat, which is the usual grouping in four. Beaming eighths in pairs instead
+   * would say the pulse is the eighth, and it also splits a rising run into
+   * four two-note groups whose stems can end up pointing different ways — the
+   * shape the beam was there to show, cut into pieces.
+   */
+  const beamBeats = beats === 0.5 ? 2 : 1
+  const perBeam = beats < 1 ? Math.round(beamBeats / beats) : 0
+  const beamsAt = (i: number): BeamState[] | undefined => {
+    if (perBeam < 2) return undefined
+    const place = i % perBeam
+    // A group cut short by the end of the material is left unbeamed rather than
+    // opened and never closed, which would draw a beam running off the bar.
+    if (i - place + perBeam > steps.length) return undefined
+    return [place === 0 ? 'begin' : place === perBeam - 1 ? 'end' : 'continue']
+  }
+
   const spell = (midi: number) =>
     options.spell ? spellPitchWith(midi, options.spell) : spellPitch(midi, key)
 
@@ -178,7 +203,7 @@ export function scoreFor(
         measure: Math.floor((i * beats) / barBeats),
         velocity: 0.8,
         notated: {
-          segments: [{ type: type(beats), dots: 0, beats }],
+          segments: [{ type: type(beats), dots: 0, beats, ...(beamsAt(i) ? { beams: beamsAt(i) } : {}) }],
           ...(accidental ? { accidental } : {}),
         },
       }

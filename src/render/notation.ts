@@ -595,8 +595,28 @@ function buildGroup(
   headWidth: number,
   beamWeight: number,
 ): BeamGroup {
-  const ups = run.filter((c) => clusterUp(c, middleIndex)).length
-  const up = ups * 2 >= run.length
+  /*
+   * One direction for the group, decided by the note furthest from the middle
+   * line — the same rule a single chord uses, applied to the whole run.
+   *
+   * It was a majority vote of the individual clusters, which agrees most of the
+   * time and then disagrees exactly where it matters: four notes barely above
+   * the line and one a tenth below outvote the one whose stem would have to
+   * cross the staff. And a two-note group with one note either side of the line
+   * is a tie the vote could only ever break upwards, where convention breaks it
+   * down.
+   */
+  const stated = run.flatMap((c) => c.notes).find((p) => p.note.notated?.stem)?.note.notated?.stem
+  let below = 0
+  let above = 0
+  for (const cluster of run) {
+    for (const placed of cluster.notes) {
+      const distance = diatonicIndex(placed.note.spelling) - middleIndex
+      if (distance < 0) below = Math.max(below, -distance)
+      else above = Math.max(above, distance)
+    }
+  }
+  const up = stated ? stated === 'up' : below > above
 
   const stems = run.map((cluster) => {
     const centres = cluster.notes.map((p) => ({
