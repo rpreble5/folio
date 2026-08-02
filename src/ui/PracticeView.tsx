@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { session, useStore } from '../state/store'
+import { player } from '../audio/player'
 import { exitFullscreen, keepAwake } from './screen'
 import { layoutScore } from '../render/layout'
 import { ScoreView } from '../render/ScoreView'
@@ -23,6 +24,7 @@ import { noteName, spellPitch } from '../core/pitch'
 import {
   DEFAULT_DRILL,
   generateDrill,
+  barsIn,
   pitchesOf,
   summarise,
   type Attempt,
@@ -75,6 +77,8 @@ export function PracticeView() {
   // they have been on it long enough to be shown it.
   const [lastWrong, setLastWrong] = useState<number | null>(null)
   const [stuck, setStuck] = useState(false)
+  /** Beat reached by the play-through, or null when nothing is playing. */
+  const [demoBeat, setDemoBeat] = useState<number | null>(null)
   const [doctor, setDoctor] = useState(false)
   const [progress, setProgress] = useState<Progress>(() => loadProgress())
 
@@ -90,6 +94,19 @@ export function PracticeView() {
   const wrongRef = useRef(0)
   const shownAt = useRef(0)
   const settling = useRef(false)
+  // Read inside the note handler, which is registered once per prompt and must
+  // not close over a stale value.
+  const demoing = useRef(false)
+  demoing.current = demoBeat !== null
+  /**
+   * Ends the play-through early, from outside the effect that runs it.
+   *
+   * Silencing the player is not enough on its own: the frame loop that follows
+   * the playhead keeps running and writes a beat straight back, so the demo
+   * would go quiet and still refuse to hand over. Ending it has to stop the
+   * clock as well as the sound, and only the effect holds the frame handle.
+   */
+  const endDemo = useRef<(() => void) | null>(null)
 
   const beginPrompt = useCallback(() => {
     heldRef.current = new Set()
@@ -104,6 +121,9 @@ export function PracticeView() {
   }, [])
 
   const startLevel = (next: Level) => {
+    // The click that got here is the gesture a browser wants before it will
+    // make a sound, and a demo that arrives silently is worse than none.
+    void player.unlock()
     setLevel(next)
     setPrompts(next.make(key, seed))
     setAttempts([])
@@ -143,6 +163,20 @@ export function PracticeView() {
 
     const stop = session.listen((note, on) => {
       if (settling.current) return
+
+      /*
+       * Playing during the play-through means "I have heard enough": stop it and
+       * begin, rather than scoring a note against a prompt not yet asked for.
+       *
+       * The note itself is thrown away. It was played to interrupt, not to
+       * answer — counting it would hand out a step nobody read if it happened to
+       * be right, and a mistake nobody made if it happened to be wrong.
+       */
+      if (demoing.current) {
+        if (!on) return
+        endDemo.current?.()
+        return
+      }
 
       if (!on) {
         heldRef.current.delete(note)
@@ -217,6 +251,56 @@ export function PracticeView() {
   }, [stage, prompt, beginPrompt])
 
   /**
+   * Play the prompt once before the attempt.
+   *
+   * Only for levels that ask for it — a scale or a riff has a shape, and hearing
+   * a shape before reading it is how anyone learns one. Playing a single note
+   * before asking which note it is would simply be the answer.
+   *
+   * The attempt's clock starts when the demo *ends*, not when the prompt
+   * appears, or listening would count against the reader as hesitation.
+   */
+  useEffect(() => {
+    if (stage !== 'running' || !prompt || !level?.demo) return
+
+    let frame = 0
+    let cancelled = false
+    const bpm = prompt.score.tempos[0]?.bpm ?? 88
+
+    const finish = () => {
+      if (cancelled) return
+      cancelled = true
+      cancelAnimationFrame(frame)
+      player.stop()
+      endDemo.current = null
+      setDemoBeat(null)
+      beginPrompt()
+    }
+
+    // Reached the end on its own, or cut short by the reader — the same ending
+    // either way, so the attempt starts from the same place.
+    endDemo.current = finish
+
+    setDemoBeat(0)
+    player.play(prompt.score, 0, 1, finish)
+
+    const tick = () => {
+      if (cancelled) return
+      setDemoBeat(player.elapsed() * (bpm / 60))
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+      player.stop()
+      endDemo.current = null
+      setDemoBeat(null)
+    }
+  }, [stage, prompt?.id, level, beginPrompt])
+
+  /**
    * Let the wrong-note wash fade.
    *
    * It is a flash, and it was staying lit for as long as someone was stuck —
@@ -272,8 +356,11 @@ export function PracticeView() {
    * the room it needs rather than stretching to the page; and one bar per line so
    * nothing can arrive beside it.
    */
+  const bars = prompt ? barsIn(prompt) : 1
   const promptTheme = useMemo(() => {
-    const laneHeight = Math.max(theme.layout.laneHeight, 13)
+    // Long material needs a smaller staff, or two bars of a scale will not fit
+    // across a phone held in portrait.
+    const laneHeight = Math.max(theme.layout.laneHeight, bars > 1 ? 10 : 13)
     // Spacing's unit is in pixels rather than staff spaces, so enlarging the
     // staff without enlarging it too would keep the old gaps and read as cramped.
     const grew = laneHeight / Math.max(1, theme.layout.laneHeight)
@@ -282,19 +369,21 @@ export function PracticeView() {
       layout: {
         ...theme.layout,
         laneHeight,
-        barsPerSystem: 1,
+        // However many bars the prompt is, all on one line: a prompt that wraps
+        // is two prompts as far as the eye is concerned.
+        barsPerSystem: bars,
         showMeasureNumbers: false,
         spacing: theme.layout.spacing
           ? { ...theme.layout.spacing, justify: 0, unit: theme.layout.spacing.unit * grew }
           : undefined,
       },
     }
-  }, [theme])
+  }, [theme, bars])
 
   // Wide enough for four quarters plus a clef, key and time signature, narrow
   // enough that an unjustified bar does not sit in an acre of nothing.
   const layout = useMemo(
-    () => (prompt ? layoutScore(prompt.score, promptTheme, 330 + prompt.steps.length * 46) : null),
+    () => (prompt ? layoutScore(prompt.score, promptTheme, 300 + prompt.steps.length * 52) : null),
     [prompt, promptTheme],
   )
 
@@ -309,11 +398,22 @@ export function PracticeView() {
   const activeIds = useMemo(() => {
     const ids = new Set<string>()
     if (!prompt) return ids
+
+    // During the play-through, light what is sounding — that is the whole point
+    // of it, since the ear and the eye have to be pointed at the same note for
+    // one to teach the other.
+    if (demoBeat !== null) {
+      for (const note of prompt.score.notes) {
+        if (note.onset <= demoBeat && note.onset + note.duration > demoBeat) ids.add(note.id)
+      }
+      return ids
+    }
+
     for (let i = 0; i < step; i += 1) {
       for (let j = 0; j < prompt.steps[i].length; j += 1) ids.add(`${prompt.id}-${i}-${j}`)
     }
     return ids
-  }, [prompt, step])
+  }, [prompt, step, demoBeat])
 
   /**
    * Where the step being answered is, in the layout's coordinates.
@@ -472,7 +572,9 @@ export function PracticeView() {
 
       {stage === 'running' && prompt && (
         <div className="practice__hint" style={{ color: theme.surface.muted }}>
-          {prompt.steps.length > 1
+          {demoBeat !== null
+            ? 'listen — play any note to start'
+            : prompt.steps.length > 1
             ? 'play them in order'
             : prompt.steps[0].length > 1
               ? 'play every note together'

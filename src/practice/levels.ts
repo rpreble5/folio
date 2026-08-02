@@ -33,6 +33,14 @@ export interface Level {
   goal: string
   make(key: KeyMark, seed: number): Prompt[]
   /**
+   * Play each prompt through once before the attempt.
+   *
+   * On for anything with a shape to it — a scale, a riff — and off for reading
+   * drills. Hearing a phrase before reading it is how anyone learns one, but
+   * hearing a single note before identifying it is just giving the answer away.
+   */
+  demo?: boolean
+  /**
    * Fraction of prompts that must be right first time to pass.
    *
    * Not 100%: a bar that demands perfection is a bar people stop attempting, and
@@ -176,6 +184,92 @@ function alternating(make: (hand: Hand, seed: number) => Prompt[], seed: number)
   return out
 }
 
+/**
+ * The blues scale, in semitones from the tonic.
+ *
+ * Minor third, fourth, flat fifth, fifth, flat seventh. The flat fifth is the
+ * blue note itself, and it is the reason this material is written with flats:
+ * these are heard as lowered degrees, not raised ones, and spelling them as
+ * sharps would put every one of them on the wrong line.
+ */
+const BLUES = [0, 3, 5, 6, 7, 10]
+
+/** A run through the blues scale, one octave, ascending. */
+function bluesScale(key: KeyMark, lowest: number): number[] {
+  const tonic = tonicOf(key)
+  const root = lowest + (((tonic - (lowest % 12)) % 12) + 12) % 12
+  return [...BLUES.map((s) => root + s), root + 12]
+}
+
+/**
+ * A major scale, one octave.
+ *
+ * Written as one prompt of eight notes rather than eight prompts of one: a
+ * scale is a shape, and the thing worth practising is playing it as one gesture.
+ */
+function majorScale(key: KeyMark, lowest: number): number[] {
+  return scaleFrom(key, lowest, 8)
+}
+
+/** The same run, up then down, as two prompts. Repetition is the point. */
+function runs(
+  notes: number[],
+  key: KeyMark,
+  hand: Hand,
+  prefix: string,
+  spell: 'sharp' | 'flat' | undefined,
+  times: number,
+): Prompt[] {
+  const up = notes.map((n) => [n])
+  const down = [...notes].reverse().map((n) => [n])
+  const out: Prompt[] = []
+  for (let i = 0; i < times; i += 1) {
+    const steps = i % 2 === 0 ? up : down
+    const id = `${prefix}${i}`
+    out.push({ id, steps, score: scoreFor(steps, key, hand, id, { spell }) })
+  }
+  return out
+}
+
+/**
+ * Riffs worth knowing, as semitone offsets from the tonic.
+ *
+ * Real patterns rather than generated ones. A riff is a thing people play, and
+ * an invented sequence of blue notes is an exercise pretending to be one.
+ */
+const RIFFS: { name: string; hand: Hand; offsets: number[] }[] = [
+  {
+    // The boogie-woogie bass: root, third, fifth, sixth, flat seventh, and back
+    // down. The pattern under most of the twentieth century.
+    name: 'boogie',
+    hand: 'left',
+    offsets: [0, 4, 7, 9, 10, 9, 7, 4],
+  },
+  {
+    // A descending lick out of the blues scale, the way a phrase answers itself.
+    name: 'answer',
+    hand: 'right',
+    offsets: [12, 10, 7, 6, 5, 3, 0],
+  },
+  {
+    // Around the blue note and back — the flat fifth leaned on, then released.
+    name: 'blue',
+    hand: 'right',
+    offsets: [0, 3, 5, 6, 5, 3],
+  },
+]
+
+function riffs(key: KeyMark, lowest: number): Prompt[] {
+  const tonic = tonicOf(key)
+  return RIFFS.map((riff, i) => {
+    const home = riff.hand === 'left' ? LEFT_HOME : lowest
+    const root = home + ((((tonic - (home % 12)) % 12) + 12) % 12)
+    const steps = riff.offsets.map((o) => [root + o])
+    const id = `riff-${riff.name}-${i}`
+    return { id, steps, score: scoreFor(steps, key, riff.hand, id, { spell: 'flat' }) }
+  })
+}
+
 /** Middle C is 60. The five-finger positions each hand starts from. */
 const RIGHT_HOME = 60
 const LEFT_HOME = 48
@@ -240,6 +334,40 @@ export const LEVELS: Level[] = [
     goal: 'A chord, then a melody out of it. Both kinds of reading in one bar.',
     make: (key, seed) => chordPhrases(key, 'right', RIGHT_HOME, 8, seed),
     pass: 0.7,
+  },
+  {
+    id: 'scale-right',
+    name: 'Scale · right hand',
+    goal: 'A whole octave as one gesture, up and then down. Listen first.',
+    make: (key) => runs(majorScale(key, RIGHT_HOME), key, 'right', 's', undefined, 4),
+    demo: true,
+    // Eight notes in a row is a long way to go without a slip, and the aim is
+    // the shape rather than a clean sheet. Half of them is a real pass.
+    pass: 0.5,
+  },
+  {
+    id: 'scale-left',
+    name: 'Scale · left hand',
+    goal: 'The same octave in the bass, where the fingering runs the other way.',
+    make: (key) => runs(majorScale(key, LEFT_HOME), key, 'left', 'sl', undefined, 4),
+    demo: true,
+    pass: 0.5,
+  },
+  {
+    id: 'blues-scale',
+    name: 'The blues scale',
+    goal: 'Six notes and a flat fifth. Written with flats, because that is what they are.',
+    make: (key) => runs(bluesScale(key, RIGHT_HOME), key, 'right', 'b', 'flat', 4),
+    demo: true,
+    pass: 0.5,
+  },
+  {
+    id: 'blues-riffs',
+    name: 'Blues riffs',
+    goal: 'A boogie bass, an answering lick, and a lean on the blue note.',
+    make: (key) => riffs(key, RIGHT_HOME),
+    demo: true,
+    pass: 0.5,
   },
 ]
 

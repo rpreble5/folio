@@ -32,3 +32,8 @@ practice-*.png
 .ghostcheck.mjs
 .ghostshot.mjs
 ghost.png
+.materialcheck.mjs
+.democheck.mjs
+.demoshot.mjs
+demo-*.png
+.barcheck.mjs

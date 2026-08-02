@@ -53,6 +53,15 @@ export interface Column {
   lead: number
   /** Fixed room reserved after the heads — the heads themselves, and dots. */
   rod: number
+  /**
+   * How far the column's own ink actually reaches past `x`.
+   *
+   * Less than the rod, which carries the air a following column is owed as well
+   * as the glyph. Anything positioned *in* the gap between two columns — a
+   * barline — needs the ink, or it measures from a head's left edge and lands
+   * on top of that head's stem.
+   */
+  ink: number
   /** Stretchable room, from the gap to the next column. */
   spring: number
 }
@@ -248,6 +257,7 @@ function buildColumns(
       x: 0,
       lead,
       rod: (spacing.crowd + (dots > 0 ? spacing.dot * dots : 0)) * headWidth,
+      ink: (1 + (dots > 0 ? spacing.dot * dots : 0)) * headWidth,
       spring: 0,
     }
   })
@@ -257,6 +267,7 @@ function buildColumns(
     x: 0,
     lead: 0,
     rod: 0,
+    ink: 0,
     spring: 0,
   })
 
@@ -444,6 +455,11 @@ function wholeBarCentre(system: System, column: Column, columns: Column[]): numb
  * A bar's left edge is the column that opens it, less half the gap back to the
  * previous column — a barline drawn hard against the following head reads as
  * crowded, and engravers centre it in the space.
+ *
+ * The gap is measured between *ink*, not between origins. Centring on the
+ * previous column's origin spends half the measurement on that column's own
+ * notehead, so the line comes out a head-width too far left and sits against the
+ * stem of the bar's last note, reading as a thin double bar.
  */
 function placeMeasures(
   system: System,
@@ -457,8 +473,11 @@ function placeMeasures(
     const column = columns[index]
     const previous = columns[index - 1]
     if (!previous) return Math.max(0, column.x - column.lead)
-    const gapStart = previous.x
-    return (gapStart + column.x - column.lead) / 2
+    const gapStart = previous.x + previous.ink
+    const gapEnd = column.x - column.lead
+    // Packed to the rods there is no gap left to centre in, and the only place
+    // that is not on top of a glyph is hard against the following one.
+    return gapStart >= gapEnd ? gapEnd : (gapStart + gapEnd) / 2
   }
 
   for (const measure of measures) {

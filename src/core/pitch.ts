@@ -63,9 +63,52 @@ const FLAT_SPELLING: [Step, number][] = [
  * octave boundary falls at C and none of the five reaches across it.
  */
 export function spellPitch(midi: number, key: KeyMark): Spelling {
-  const table = key.fifths < 0 ? FLAT_SPELLING : SHARP_SPELLING
+  return spellPitchWith(midi, key.fifths < 0 ? 'flat' : 'sharp')
+}
+
+/**
+ * Spell a pitch with an explicit preference.
+ *
+ * Needed because the key signature is not always the right authority. A blues
+ * line in C is written with flats — E♭ and B♭ — even though C major has none,
+ * because those notes are heard as lowered thirds and sevenths rather than
+ * raised seconds and sixths. Spelling them as D♯ and A♯ would put both on the
+ * wrong line of the staff and read as a different phrase entirely.
+ */
+export function spellPitchWith(midi: number, prefer: 'sharp' | 'flat'): Spelling {
+  const table = prefer === 'flat' ? FLAT_SPELLING : SHARP_SPELLING
   const [step, alter] = table[pitchClass(midi)]
   return { step, alter, octave: octaveOf(midi) }
+}
+
+/** Sharps and flats take their letters in these fixed orders. */
+const SHARP_ORDER: Step[] = ['F', 'C', 'G', 'D', 'A', 'E', 'B']
+const FLAT_ORDER: Step[] = ['B', 'E', 'A', 'D', 'G', 'C', 'F']
+
+/**
+ * What the key signature already does to a letter.
+ *
+ * The difference between this and a note's own alteration is exactly what
+ * decides whether an accidental is printed: a B♭ in F major needs no flat
+ * because the signature has already said so, and a B natural in F major needs a
+ * natural sign precisely because it contradicts it.
+ */
+export function keyAlteration(step: Step, key: KeyMark): number {
+  if (key.fifths > 0) return SHARP_ORDER.slice(0, Math.min(7, key.fifths)).includes(step) ? 1 : 0
+  if (key.fifths < 0) return FLAT_ORDER.slice(0, Math.min(7, -key.fifths)).includes(step) ? -1 : 0
+  return 0
+}
+
+/** The accidental a note must print, given the key. Undefined when none. */
+export function printedAccidental(spelling: Spelling, key: KeyMark): string | undefined {
+  const expected = keyAlteration(spelling.step, key)
+  if (spelling.alter === expected) return undefined
+  if (spelling.alter === 0) return 'natural'
+  if (spelling.alter === 1) return 'sharp'
+  if (spelling.alter === -1) return 'flat'
+  if (spelling.alter === 2) return 'double-sharp'
+  if (spelling.alter === -2) return 'flat-flat'
+  return undefined
 }
 
 const BLACK_KEYS = new Set([1, 3, 6, 8, 10])

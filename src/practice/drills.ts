@@ -12,9 +12,9 @@
  * is possible with Math.random.
  */
 
-import type { KeyMark, Score } from '../core/types'
+import type { KeyMark, NoteEvent, NoteType, RestEvent, Score } from '../core/types'
 import { markBarStarts } from '../core/types'
-import { pitchClass, spellPitch } from '../core/pitch'
+import { pitchClass, printedAccidental, spellPitch, spellPitchWith } from '../core/pitch'
 
 export type DrillKind = 'note' | 'chord'
 
@@ -105,75 +105,135 @@ function pool(config: DrillConfig, key: KeyMark): number[] {
   return out
 }
 
+/** How a prompt is written, beyond which notes it holds. */
+export interface ScoreOptions {
+  /** Prefer sharps or flats. Defaults to whatever the key implies. */
+  spell?: 'sharp' | 'flat'
+  /** Beats per step. Defaults to a whole bar for a lone step, a quarter otherwise. */
+  beatsPerStep?: number
+}
+
+/** Beats in a bar. Everything generated here is in four. */
+const BAR = 4
+
 /**
  * Build a Score holding exactly one prompt.
  *
- * Rhythm is held constant on purpose: a lone step is a whole note filling a bar
- * of 4/4, and a phrase is all quarter notes in a bar whose time signature is
- * however many there are. A reading drill should ask one question, and mixing
- * pitch with duration means a wrong answer no longer says which of the two was
- * the problem. Every prompt is exactly one bar, so nothing ever wraps.
+ * Rhythm is held constant on purpose: a lone step is a whole note filling a bar,
+ * and everything longer is quarter notes. A reading drill should ask one
+ * question, and mixing pitch with duration means a wrong answer no longer says
+ * which of the two was the problem.
  *
- * A full grand staff with a whole-bar rest on the hand that is not playing,
- * rather than a lone treble staff. Two reasons: it is what piano music actually
- * looks like, so the drill trains the real thing; and without clefs the renderer
- * has nothing to draw the lower staff *from*, which produced five bare lines
- * with no clef sitting under the prompt like a mistake.
+ * Short prompts get a bar of their own length — three notes make a bar of 3/4 —
+ * so nothing is padded. Anything longer than a bar is written in 4/4 across as
+ * many bars as it needs, with a rest filling whatever is left of the last one. A
+ * seven-note blues scale is two bars and a beat of silence, which is how it
+ * would actually be written.
+ *
+ * A full grand staff with rests on the hand that is not playing, rather than a
+ * lone treble staff: it is what piano music looks like, so the drill trains the
+ * real thing, and without clefs the renderer has nothing to draw the lower staff
+ * from.
+ *
+ * Accidentals are printed where the key signature does not already account for
+ * them, which is what makes generated blues material legible — a B♭ in C major
+ * needs its flat, and without one the reader is looking at a B.
  */
 export function scoreFor(
   steps: number[][],
   key: KeyMark,
   hand: 'left' | 'right',
   id: string,
+  options: ScoreOptions = {},
 ): Score {
   const staff = hand === 'left' ? 2 : 1
+  const other = staff === 1 ? 2 : 1
   const single = steps.length === 1
-  const beats = single ? 4 : 1
-  const type = single ? ('whole' as const) : ('quarter' as const)
-  const barBeats = single ? 4 : steps.length
+  const beats = options.beatsPerStep ?? (single ? BAR : 1)
+  const played = steps.length * beats
 
-  const notes = steps.flatMap((step, i) =>
-    step.map((midi, j) => ({
-      id: `${id}-${i}-${j}`,
-      onset: i * beats,
-      duration: beats,
-      midi,
-      spelling: spellPitch(midi, key),
-      hand,
-      voice: 1,
-      measure: 0,
-      velocity: 0.8,
-      notated: { segments: [{ type, dots: 0, beats }] },
-    })),
+  // A short prompt gets a bar its own size; a long one is written in fours.
+  const barBeats = played <= BAR ? Math.max(1, played) : BAR
+  const bars = Math.max(1, Math.ceil(played / barBeats))
+  const total = bars * barBeats
+
+  const type = (b: number): NoteType =>
+    b >= 4 ? 'whole' : b >= 2 ? 'half' : b >= 1 ? 'quarter' : 'eighth'
+
+  const spell = (midi: number) =>
+    options.spell ? spellPitchWith(midi, options.spell) : spellPitch(midi, key)
+
+  const notes: NoteEvent[] = steps.flatMap((step, i) =>
+    step.map((midi, j) => {
+      const spelling = spell(midi)
+      const accidental = printedAccidental(spelling, key)
+      return {
+        id: `${id}-${i}-${j}`,
+        onset: i * beats,
+        duration: beats,
+        midi,
+        spelling,
+        hand,
+        voice: 1,
+        measure: Math.floor((i * beats) / barBeats),
+        velocity: 0.8,
+        notated: {
+          segments: [{ type: type(beats), dots: 0, beats }],
+          ...(accidental ? { accidental } : {}),
+        },
+      }
+    }),
   )
   markBarStarts(notes)
+
+  const rests: RestEvent[] = []
+  // One whole-bar rest per bar on the resting hand.
+  for (let bar = 0; bar < bars; bar += 1) {
+    rests.push({
+      id: `${id}-rest-${bar}`,
+      onset: bar * barBeats,
+      duration: barBeats,
+      staff: other,
+      voice: 1,
+      measure: bar,
+      wholeBar: true,
+      notated: { segments: [{ type: 'whole', dots: 0, beats: barBeats }] },
+    })
+  }
+  // And whatever is left of the last bar on the playing hand.
+  if (total > played) {
+    rests.push({
+      id: `${id}-tail`,
+      onset: played,
+      duration: total - played,
+      staff,
+      voice: 1,
+      measure: bars - 1,
+      notated: { segments: [{ type: type(total - played), dots: 0, beats: total - played }] },
+    })
+  }
 
   return {
     id: `drill-${id}`,
     title: 'Practice',
     composer: '',
     notes,
-    rests: [
-      {
-        id: `${id}-rest`,
-        onset: 0,
-        duration: barBeats,
-        staff: staff === 1 ? 2 : 1,
-        voice: 1,
-        measure: 0,
-        wholeBar: true,
-        notated: { segments: [{ type: 'whole' as const, dots: 0, beats: barBeats }] },
-      },
-    ],
+    rests,
     clefs: [
       { beat: 0, staff: 1, sign: 'G', line: 2, octaveChange: 0 },
       { beat: 0, staff: 2, sign: 'F', line: 4, octaveChange: 0 },
     ],
-    tempos: [{ beat: 0, bpm: 90 }],
+    tempos: [{ beat: 0, bpm: 88 }],
     timeSignatures: [{ beat: 0, numerator: barBeats, denominator: 4 }],
     keys: [{ ...key, beat: 0 }],
-    length: barBeats,
+    length: total,
   }
+}
+
+/** How many bars a prompt occupies, so the layout can be told. */
+export function barsIn(prompt: Prompt): number {
+  const ts = prompt.score.timeSignatures[0]
+  return Math.max(1, Math.round(prompt.score.length / (ts.numerator * (4 / ts.denominator))))
 }
 
 export function generateDrill(config: DrillConfig, key: KeyMark, seed: number): Prompt[] {
