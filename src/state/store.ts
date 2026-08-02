@@ -185,6 +185,17 @@ export interface MidiState {
   /** Rolling agreement with the score, 0 to 1. */
   confidence: number
   wrong: number
+  /**
+   * The last key pressed and how many have arrived, regardless of the score.
+   *
+   * Diagnostic. A connection can succeed, find a device, and still deliver
+   * nothing — a MIDI cable in the wrong socket, an instrument with its
+   * transmit channel off — and every other signal in this app depends on a
+   * note *matching* something, so none of them can tell that apart from
+   * playing the wrong notes.
+   */
+  lastNote: number | null
+  noteCount: number
 }
 
 const NO_MIDI: MidiState = {
@@ -197,6 +208,8 @@ const NO_MIDI: MidiState = {
   following: true,
   confidence: 0,
   wrong: 0,
+  lastNote: null,
+  noteCount: 0,
 }
 
 const DARK: Theme['surface'] = PRESETS[0].surface
@@ -362,6 +375,13 @@ export const session = createSession({
 
   onNotes: (held, lit) =>
     useStore.setState((s) => ({ midi: { ...s.midi, held, lit } })),
+
+  onRaw: (note, on) => {
+    if (!on) return
+    useStore.setState((s) => ({
+      midi: { ...s.midi, lastNote: note, noteCount: s.midi.noteCount + 1 },
+    }))
+  },
 
   onPosition: (beat, snapshot) =>
     useStore.setState((s) => {

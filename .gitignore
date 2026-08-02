@@ -22,3 +22,4 @@ dist
 .drillcheck.mjs
 .practiceshot.mjs
 practice-*.png
+.diagcheck.mjs

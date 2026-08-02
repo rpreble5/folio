@@ -228,14 +228,27 @@ export function PracticeView() {
           <p className="practice__note" style={{ color: theme.surface.muted }}>
             {support.reason}
           </p>
-        ) : !midi.connected ? (
+        ) : !midi.connected || midi.devices.length === 0 ? (
           <div className="practice__intro">
             <p className="practice__note" style={{ color: theme.surface.muted }}>
-              Connect a keyboard and play what you see. Prompts are drawn in your own
-              style, so this is practice at reading the notation you designed.
+              {midi.connected
+                ? 'Connected, but no keyboard is sending anything.'
+                : 'Connect a keyboard and play what you see. Prompts are drawn in your own style, so this is practice at reading the notation you designed.'}
             </p>
+
+            {/* The one readout that separates "not connected" from "connected
+                and silent". Everything else in the app only reacts to a note
+                that matches something, so none of it can tell those apart. */}
+            {midi.connected && (
+              <p className="practice__note" style={{ color: theme.surface.muted }}>
+                {midi.noteCount > 0
+                  ? `${midi.noteCount} notes received — last was ${noteName(spellPitch(midi.lastNote ?? 60, key), true)}`
+                  : 'Nothing received yet. Over USB this works straight away; over Bluetooth, Android’s own pairing screen does not switch MIDI on, so the piano has to be connected from inside an app.'}
+              </p>
+            )}
+
             <button className="pill pill--accent" onClick={() => void connectMidi()}>
-              Connect keyboard
+              {midi.connected ? 'Look again' : 'Connect keyboard'}
             </button>
           </div>
         ) : done ? (

@@ -24,6 +24,18 @@ export interface SessionHandlers {
   onNotes(held: Set<number>, lit: Set<string>): void
   /** The follower moved. */
   onPosition(beat: number, snapshot: FollowerSnapshot): void
+  /**
+   * Every note, in every mode, matched or not.
+   *
+   * Exists for one reason: to answer "is anything arriving at all?" without
+   * involving the score. When a keyboard does not appear to work, the useful
+   * question is whether the problem is the connection or the matching, and
+   * nothing that depends on matching can tell you.
+   *
+   * Optional: it is a diagnostic, and a caller that only wants the follower
+   * should not have to supply one.
+   */
+  onRaw?(midi: number, on: boolean): void
 }
 
 /**
@@ -93,6 +105,7 @@ export function createSession(
   }
 
   const handleNote = (midi: number, on: boolean) => {
+    handlers.onRaw?.(midi, on)
     for (const listener of listeners) listener(midi, on)
     if (mode !== 'follow') return
 

@@ -94,16 +94,22 @@ export function Transport() {
           title={
             midi.error ??
             (midi.connected
-              ? midi.devices.map((d) => d.name).join(', ')
+              ? `${midi.devices.map((d) => d.name).join(', ') || 'No inputs'} · ${midi.noteCount} notes received`
               : 'Play along and your notes light up')
           }
         >
           <span className="keyboard-btn__dot" />
           {midi.connecting
             ? 'Connecting…'
-            : midi.connected
-              ? (midi.devices[0]?.name ?? 'Listening')
-              : 'Keyboard'}
+            : !midi.connected
+              ? 'Keyboard'
+              : // Connected with nothing on the other end is its own state, and
+                // it was being reported as "Listening" — which is true, and is
+                // exactly the wrong thing to say to someone whose keyboard is
+                // not working.
+                midi.devices.length === 0
+                ? 'No keyboard found'
+                : (midi.devices[0]?.name ?? 'Keyboard')}
         </button>
       )}
 
