@@ -40,3 +40,6 @@ demo-*.png
 .jazzcheck.mjs
 .tabcheck.mjs
 .fitcheck.mjs
+.tempocheck.mjs
+.temposhot.mjs
+tempo-*.png

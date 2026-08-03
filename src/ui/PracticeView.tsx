@@ -33,6 +33,7 @@ import {
 } from '../practice/drills'
 import { LEVELS, LEVEL_GROUPS, type Level, type LevelGroup } from '../practice/levels'
 import { loadProgress, recordResult, unlockedCount, type Progress } from '../practice/progress'
+import { loadTempo, saveTempo, stepTempo, TEMPI } from '../practice/settings'
 import { midiSupport } from '../io/midi'
 import { bluetoothSupport } from '../io/blemidi'
 import { MidiDoctor } from './MidiDoctor'
@@ -81,6 +82,25 @@ export function PracticeView() {
   const [demoBeat, setDemoBeat] = useState<number | null>(null)
   const [doctor, setDoctor] = useState(false)
   const [progress, setProgress] = useState<Progress>(() => loadProgress())
+  const [bpm, setBpm] = useState<number>(() => loadTempo())
+  /**
+   * Bumped to play the prompt through again.
+   *
+   * Changing the tempo while the play-through is sounding restarts it at the
+   * new one — the reader is listening, and a control that takes effect on some
+   * later prompt cannot be judged by ear. Changing it during an *attempt*
+   * deliberately does nothing until the next prompt: a demo starting up
+   * underneath someone mid-phrase would be worse than a slow one.
+   */
+  const [replay, setReplay] = useState(0)
+  const nudgeTempo = (direction: 1 | -1) => {
+    setBpm((current) => {
+      const next = stepTempo(current, direction)
+      saveTempo(next)
+      return next
+    })
+    if (demoing.current) setReplay((n) => n + 1)
+  }
 
   const key = useMemo(() => keyAt(score, 0), [score])
   const [prompts, setPrompts] = useState<Prompt[]>([])
@@ -265,7 +285,16 @@ export function PracticeView() {
 
     let frame = 0
     let cancelled = false
-    const bpm = prompt.score.tempos[0]?.bpm ?? 88
+    /*
+     * The prompt is written at one tempo and played at the reader's.
+     *
+     * The player takes a multiplier rather than a tempo, so the chosen tempo is
+     * expressed as a ratio against whatever the prompt was written at. Changing
+     * the number written into the prompt instead would mean rebuilding every
+     * score on every nudge of the control.
+     */
+    const written = prompt.score.tempos[0]?.bpm ?? 88
+    const scale = bpm / written
 
     const finish = () => {
       if (cancelled) return
@@ -282,10 +311,12 @@ export function PracticeView() {
     endDemo.current = finish
 
     setDemoBeat(0)
-    player.play(prompt.score, 0, 1, finish)
+    player.play(prompt.score, 0, scale, finish)
 
     const tick = () => {
       if (cancelled) return
+      // elapsed() is wall clock, and the music is going past at the tempo
+      // actually chosen — so that is the number that converts it to beats.
       setDemoBeat(player.elapsed() * (bpm / 60))
       frame = requestAnimationFrame(tick)
     }
@@ -298,7 +329,11 @@ export function PracticeView() {
       endDemo.current = null
       setDemoBeat(null)
     }
-  }, [stage, prompt?.id, level, beginPrompt])
+    // bpm is read, not depended on: a tempo change during an attempt must not
+    // restart the play-through. `replay` is the deliberate way to ask for that,
+    // and it is only bumped while the demo is actually sounding.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, prompt?.id, level, beginPrompt, replay])
 
   /**
    * Let the wrong-note wash fade.
@@ -444,6 +479,12 @@ export function PracticeView() {
           {stage === 'running' && level ? level.name : 'Rapid fire'}
         </span>
         <span className="practice__spacer" />
+        {/* Only where it does something. A tempo control on a reading drill,
+            which never plays itself, is a dial wired to nothing. Free play
+            leaves the level null, so it drops out here too. */}
+        {(stage === 'menu' || level?.demo) && (
+          <Tempo bpm={bpm} muted={theme.surface.muted} onStep={nudgeTempo} />
+        )}
         {stage === 'running' && (
           <span className="practice__count">
             {index + 1} <i>/</i> {prompts.length}
@@ -596,6 +637,55 @@ export function PracticeView() {
  * it, taken from the same theme, was dark ink on a dark card and simply could not
  * be read. One screen, one palette.
  */
+/**
+ * How fast the play-through plays, as a metronome mark.
+ *
+ * A stepper rather than a slider: the tempi are the ones a metronome offers, so
+ * there is nothing between two of them to drag to, and a slider would promise
+ * a precision the scale does not have. Two taps and a number, which is also the
+ * only shape of control that survives being used with one hand at a keyboard.
+ */
+function Tempo({
+  bpm,
+  muted,
+  onStep,
+}: {
+  bpm: number
+  muted: string
+  onStep(direction: 1 | -1): void
+}) {
+  const end = (direction: 1 | -1) =>
+    direction < 0 ? bpm <= TEMPI[0] : bpm >= TEMPI[TEMPI.length - 1]
+  return (
+    <span className="tempo" style={{ color: muted }}>
+      <button
+        className="tempo__step"
+        onClick={() => onStep(-1)}
+        disabled={end(-1)}
+        aria-label="Slower"
+      >
+        −
+      </button>
+      {/* The note value the mark is against, so the number means something on
+          its own — 104 is not a tempo, a quarter note at 104 is. */}
+      <span className="tempo__mark" aria-label={`Quarter note equals ${bpm}`}>
+        <span className="tempo__note" aria-hidden="true">
+          ♩
+        </span>
+        {bpm}
+      </span>
+      <button
+        className="tempo__step"
+        onClick={() => onStep(1)}
+        disabled={end(1)}
+        aria-label="Faster"
+      >
+        +
+      </button>
+    </span>
+  )
+}
+
 function Levels({
   progress,
   unlocked,

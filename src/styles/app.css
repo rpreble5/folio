@@ -1882,12 +1882,25 @@ button {
   font-size: 13px;
 }
 
+/*
+ * The title gives way first.
+ *
+ * Four things share this bar on a phone — where you are, how fast, how far, and
+ * the way out — and only the title can be shortened without losing something.
+ * It wrapped to two lines and shoved the bar out of square; now it takes one
+ * line and trails off, because the level was chosen two taps ago and the name is
+ * the one thing on this screen already known.
+ */
 .practice__title {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-size: 11px;
   opacity: 0.72;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .practice__spacer {
@@ -1898,6 +1911,72 @@ button {
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   opacity: 0.75;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/*
+ * The metronome mark.
+ *
+ * Sits in the header rather than in a settings panel because it is judged by
+ * ear: you hear the play-through, decide it is slow, and change it — and having
+ * to leave the screen to do that breaks the loop the control exists for.
+ *
+ * No boxes and no chrome colours. This bar is painted with the reader's page
+ * colour, so a bordered stepper from the app's palette would be two grey
+ * buttons floating on their music.
+ */
+.tempo {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.tempo__step {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 15px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.6;
+  transition: opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.tempo__step:hover:not(:disabled) {
+  opacity: 1;
+  background: currentColor;
+  /* The hover fill is the ink at a tenth, which reads as a lift on a light page
+     and on a dark one without either being named here. */
+  background: color-mix(in oklab, currentColor 14%, transparent);
+}
+
+.tempo__step:disabled {
+  opacity: 0.22;
+  cursor: default;
+}
+
+.tempo__mark {
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+/*
+ * The quarter note in the mark is the system font's U+2669, not Bravura — the
+ * engraving glyphs in this app are baked-in SVG paths rather than a webfont, so
+ * there is no music font to ask. It is a small symbol next to lining figures,
+ * and the system one is nudged onto their baseline rather than replaced.
+ */
+.tempo__note {
+  margin-right: 3px;
+  font-size: 15px;
+  vertical-align: -1px;
 }
 
 .practice__count i {
