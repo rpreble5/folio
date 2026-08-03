@@ -43,3 +43,8 @@ demo-*.png
 .tempocheck.mjs
 .temposhot.mjs
 tempo-*.png
+.advancedcheck.mjs
+.advshot.mjs
+adv-*.png
+.sizecheck.mjs
+.wrapprobe.mjs

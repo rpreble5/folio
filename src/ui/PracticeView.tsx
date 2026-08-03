@@ -392,6 +392,17 @@ export function PracticeView() {
    * nothing can arrive beside it.
    */
   const bars = prompt ? barsIn(prompt) : 1
+  /*
+   * How many bars share a line.
+   *
+   * All of them, normally: a prompt is one thing to read and splitting it makes
+   * the eye travel. But a dense prompt — sixteen eighth notes across two bars —
+   * on one line of a phone comes out at a five-pixel staff space, which is not
+   * reading, it is guessing. Past a certain number of columns the prompt is
+   * better as two lines of legible music than one line of illegible music.
+   */
+  const columns = prompt ? prompt.steps.length : 1
+  const barsPerSystem = columns > 8 ? 1 : bars
   const promptTheme = useMemo(() => {
     // Long material needs a smaller staff, or two bars of a scale will not fit
     // across a phone held in portrait.
@@ -404,22 +415,29 @@ export function PracticeView() {
       layout: {
         ...theme.layout,
         laneHeight,
-        // However many bars the prompt is, all on one line: a prompt that wraps
-        // is two prompts as far as the eye is concerned.
-        barsPerSystem: bars,
+        barsPerSystem,
         showMeasureNumbers: false,
         spacing: theme.layout.spacing
           ? { ...theme.layout.spacing, justify: 0, unit: theme.layout.spacing.unit * grew }
           : undefined,
       },
     }
-  }, [theme, bars])
+  }, [theme, bars, barsPerSystem])
 
   // Wide enough for four quarters plus a clef, key and time signature, narrow
   // enough that an unjustified bar does not sit in an acre of nothing.
   const layout = useMemo(
-    () => (prompt ? layoutScore(prompt.score, promptTheme, 300 + prompt.steps.length * 52) : null),
-    [prompt, promptTheme],
+    () =>
+      prompt
+        ? layoutScore(
+            prompt.score,
+            promptTheme,
+            // Width for the widest system, not for the whole prompt: a prompt
+            // split over two lines needs room for one line of it.
+            300 + Math.ceil(prompt.steps.length / (bars / barsPerSystem)) * 52,
+          )
+        : null,
+    [prompt, promptTheme, bars, barsPerSystem],
   )
 
   /**
@@ -457,12 +475,16 @@ export function PracticeView() {
    * beside the real thing, and the only way to be sure of that is to ask the
    * layout where it put it.
    */
-  const stepX = useMemo(() => {
+  const stepAt = useMemo(() => {
     if (!layout || !prompt) return null
-    const placed = layout.systems[0]?.notes.find((n) =>
-      n.note.id.startsWith(`${prompt.id}-${step}-`),
-    )
-    return placed ? placed.x : null
+    // Every system, not just the first: a long prompt is laid out on two lines,
+    // and looking only at the first one meant the hint silently stopped
+    // appearing for any step in the second bar.
+    for (const system of layout.systems) {
+      const placed = system.notes.find((n) => n.note.id.startsWith(`${prompt.id}-${step}-`))
+      if (placed) return { x: placed.x, top: system.top }
+    }
+    return null
   }, [layout, prompt, step])
 
   const patch = (next: Partial<DrillConfig>) => {
@@ -577,13 +599,14 @@ export function PracticeView() {
                 cvd={cvd}
                 onSelectNote={() => {}}
               />
-              {stuck && lastWrong !== null && stepX !== null && (
+              {stuck && lastWrong !== null && stepAt !== null && (
                 <GhostNote
                   layout={layout}
                   theme={promptTheme}
                   key={`${prompt.id}-${step}-${lastWrong}`}
                   keyMark={key}
-                  x={stepX}
+                  x={stepAt.x}
+                  top={stepAt.top}
                   midi={lastWrong}
                   beats={prompt.steps.length === 1 ? 4 : 1}
                 />

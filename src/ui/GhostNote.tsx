@@ -39,6 +39,13 @@ interface Props {
   keyMark: KeyMark
   /** Where the step being answered sits, in the layout's own coordinates. */
   x: number
+  /**
+   * Top of the system that step is on.
+   *
+   * Zero for anything on one line, which is most prompts — but a long one is
+   * laid out on two, and a hint drawn without this lands on the wrong staff.
+   */
+  top: number
   /** The played pitch. */
   midi: number
   /** The written length of the step, so the head matches the ones beside it. */
@@ -57,7 +64,7 @@ const OFFSET = 1.25
 /** A trail would make the ghost look like a note being held. */
 const NO_TRAIL = { thickness: 0, taper: 0, melt: 0, cap: 'round' as const, opacity: 0 }
 
-export function GhostNote({ layout, theme, keyMark, x, midi, beats }: Props) {
+export function GhostNote({ layout, theme, keyMark, x, top, midi, beats }: Props) {
   const space = layout.laneHeight * 2
   const width = layout.width
   const height = layout.height + 24
@@ -93,7 +100,7 @@ export function GhostNote({ layout, theme, keyMark, x, midi, beats }: Props) {
 
   // The same formula the renderer uses, so the ghost lands on the staff exactly
   // where a real note of that pitch would.
-  const centreY = (layout.axisMax - index) * layout.laneHeight + layout.noteHeight / 2
+  const centreY = top + (layout.axisMax - index) * layout.laneHeight + layout.noteHeight / 2
   const glyph = theme.layout.notation?.heads ? headGlyphFor({ note } as never) : undefined
   const headWidth = (glyph?.width ?? HEAD_GLYPHS.black.width) * space
   const cx = layout.gutter + x + headWidth * OFFSET
@@ -115,8 +122,8 @@ export function GhostNote({ layout, theme, keyMark, x, midi, beats }: Props) {
           key={line}
           x1={cx - space * 0.55}
           x2={cx + headWidth + space * 0.55}
-          y1={(layout.axisMax - line) * layout.laneHeight + layout.noteHeight / 2}
-          y2={(layout.axisMax - line) * layout.laneHeight + layout.noteHeight / 2}
+          y1={top + (layout.axisMax - line) * layout.laneHeight + layout.noteHeight / 2}
+          y2={top + (layout.axisMax - line) * layout.laneHeight + layout.noteHeight / 2}
           stroke={ink}
           strokeWidth={1.1}
           shapeRendering="crispEdges"

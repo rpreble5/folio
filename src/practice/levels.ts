@@ -24,8 +24,36 @@
 import type { KeyMark } from '../core/types'
 import type { Prompt } from './drills'
 import { scoreFor } from './drills'
+import {
+  fitOctave,
+  LEFT_HOME,
+  LEFT_RANGE,
+  RIGHT_HOME,
+  RIGHT_RANGE,
+  rootNear,
+  scaleFrom,
+  tonicOf,
+  type Hand,
+} from './tonality'
+import {
+  arpeggios,
+  bebopScales,
+  brokenThirds,
+  chromaticScale,
+  contraryMotion,
+  longLicks,
+  minorScales,
+  octaveRiffs,
+  rootlessVoicings,
+  turnaroundChanges,
+  turnarounds,
+  tritoneSubs,
+  twelveBar,
+  twoHandTwoFiveOne,
+  twoOctaveScale,
+} from './material'
 
-export type Hand = 'left' | 'right'
+export type { Hand } from './tonality'
 
 /**
  * What a level is *about*, used to sort the list into tabs.
@@ -71,69 +99,6 @@ function random(seed: number): () => number {
   }
 }
 
-/** Semitones above the tonic for each degree of a major scale. */
-const MAJOR = [0, 2, 4, 5, 7, 9, 11]
-
-/** The tonic's pitch class, from the key's position on the circle of fifths. */
-const tonicOf = (key: KeyMark) => (((key.fifths * 7) % 12) + 12) % 12
-
-/**
- * The tonic *nearest* a home position, rather than the next one above it.
- *
- * Rounding always upwards costs up to eleven semitones, which is most of an
- * octave: the same riff written in C and in B would sit almost an octave apart,
- * and one of them would be off the end of the staff. Nearest keeps every key
- * within half an octave of where the hand already is.
- */
-function rootNear(pitchClass: number, home: number): number {
-  const up = home + ((((pitchClass - (home % 12)) % 12) + 12) % 12)
-  return up - home <= 6 ? up : up - 12
-}
-
-/**
- * Shift a whole prompt by octaves until it sits inside a hand's range.
- *
- * Applied to the prompt rather than to each note, so the shape is never
- * distorted — a voicing that has to move moves in one piece. It only shifts
- * when the shift actually helps: material genuinely wider than the window is
- * left where it is rather than pushed off the other end.
- */
-function fitOctave(steps: number[][], low: number, high: number): number[][] {
-  const flat = steps.flat()
-  if (flat.length === 0) return steps
-  let shift = 0
-  const min = () => Math.min(...flat) + shift
-  const max = () => Math.max(...flat) + shift
-  while (max() > high && min() - 12 >= low) shift -= 12
-  while (min() < low && max() + 12 <= high) shift += 12
-  return shift === 0 ? steps : steps.map((step) => step.map((m) => m + shift))
-}
-
-/** The comfortable reading range of each hand, for fitOctave. */
-const LEFT_RANGE: [number, number] = [36, 64]
-const RIGHT_RANGE: [number, number] = [55, 84]
-
-/**
- * The scale as MIDI numbers, ascending from a starting octave.
- *
- * Working in scale degrees rather than semitones is what keeps generated phrases
- * inside the key without having to check each note afterwards — a step is one
- * index, a third is two, and both are automatically diatonic.
- */
-function scaleFrom(key: KeyMark, lowest: number, count: number): number[] {
-  const tonic = tonicOf(key)
-  const out: number[] = []
-  let degree = 0
-  let octave = Math.floor(lowest / 12)
-
-  while (out.length < count) {
-    const midi = octave * 12 + tonic + MAJOR[degree % 7]
-    if (midi >= lowest) out.push(midi)
-    degree += 1
-    if (degree % 7 === 0) octave += 1
-  }
-  return out
-}
 
 const build = (steps: number[][], key: KeyMark, hand: Hand, id: string): Prompt => ({
   id,
@@ -318,9 +283,6 @@ function riffs(key: KeyMark, lowest: number): Prompt[] {
   })
 }
 
-/** Middle C is 60. The five-finger positions each hand starts from. */
-const RIGHT_HOME = 60
-const LEFT_HOME = 48
 
 /**
  * Walking bass: quarter notes that connect one chord to the next.
@@ -478,7 +440,14 @@ function licks(key: KeyMark): Prompt[] {
   })
 }
 
-export const LEVELS: Level[] = [
+/**
+ * The levels, written in the order they were thought of within each section.
+ *
+ * Not the order they are played in — see LEVELS below, which groups them. The
+ * two are kept apart so that adding a level means writing it next to its
+ * relatives rather than counting to the right index in a list of thirty.
+ */
+const COURSE: Level[] = [
   {
     id: 'warm-right',
     group: 'Reading',
@@ -631,12 +600,167 @@ export const LEVELS: Level[] = [
     // Eighths are a real step up, and the first few attempts will be untidy.
     pass: 0.4,
   },
+
+  /*
+   * Past here the material is real repertoire rather than exercises: a
+   * turnaround, a rootless voicing, a bebop scale. The pass marks come down as
+   * it gets harder — a bar that demands perfection is a bar people stop
+   * attempting, and these are worth attempting badly.
+   */
+  {
+    id: 'scale-two-octaves',
+    group: 'Scales',
+    name: 'Two octaves',
+    goal: 'In eighths, so the second thumb crossing has to actually work.',
+    make: twoOctaveScale,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'scale-minor',
+    group: 'Scales',
+    name: 'Minor scales',
+    goal: 'Natural and harmonic on the same tonic. One note apart, and you can hear it.',
+    make: minorScales,
+    demo: true,
+    pass: 0.5,
+  },
+  {
+    id: 'scale-chromatic',
+    group: 'Scales',
+    name: 'Chromatic',
+    goal: 'Sharps going up, flats coming down — a spelling says where a note is going.',
+    make: chromaticScale,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'scale-arpeggios',
+    group: 'Scales',
+    name: 'Arpeggios',
+    goal: 'The thumb crosses a third instead of a step, on the one, four, five and six.',
+    make: arpeggios,
+    demo: true,
+    pass: 0.5,
+  },
+  {
+    id: 'scale-thirds',
+    group: 'Scales',
+    name: 'Broken thirds',
+    goal: 'Two lines in one hand. The eye has to take them in pairs.',
+    make: brokenThirds,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'scale-contrary',
+    group: 'Scales',
+    name: 'Contrary motion',
+    goal: 'Both hands at once, mirrored — every finger lands with its twin.',
+    make: contraryMotion,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'blues-twelve',
+    group: 'Blues',
+    name: 'Twelve bars',
+    goal: 'The shuffle through the whole form, two bars at a time. Practising the change.',
+    make: twelveBar,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'blues-octaves',
+    group: 'Blues',
+    name: 'Riffs in octaves',
+    goal: 'Nothing new to read, a great deal more to play. The sound of the right hand.',
+    make: octaveRiffs,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'blues-turnaround',
+    group: 'Blues',
+    name: 'Turnarounds',
+    goal: 'Both hands: a bass note holding still under a line walking down through it.',
+    make: turnarounds,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'jazz-bebop',
+    group: 'Jazz',
+    name: 'Bebop scales',
+    goal: 'Eight notes, so the chord tones land on the beats. That is the whole trick.',
+    make: bebopScales,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'jazz-rootless',
+    group: 'Jazz',
+    name: 'Rootless voicings',
+    goal: 'Four notes, no root. Two hold, one drops a semitone — and it is a two five one.',
+    make: rootlessVoicings,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'jazz-tritone',
+    group: 'Jazz',
+    name: 'Tritone substitution',
+    goal: 'The five chord swapped for the one a tritone away. Listen to the bass walk down.',
+    make: tritoneSubs,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'jazz-turnaround',
+    group: 'Jazz',
+    name: 'One · six · two · five',
+    goal: 'The turnaround most standards are made of. The top voice never moves far.',
+    make: turnaroundChanges,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'jazz-hands',
+    group: 'Jazz',
+    name: 'Two five one · both hands',
+    goal: 'Root below, voicing above. The two hands doing different jobs at once.',
+    make: twoHandTwoFiveOne,
+    demo: true,
+    pass: 0.4,
+  },
+  {
+    id: 'jazz-long-licks',
+    group: 'Jazz',
+    name: 'Licks · two bars',
+    goal: 'A phrase rather than a fragment: starts on the two, turns at the five, lands.',
+    make: longLicks,
+    demo: true,
+    pass: 0.35,
+  },
 ]
 
 /** The groups present, in the order the course meets them. */
-export const LEVEL_GROUPS: LevelGroup[] = LEVELS.reduce<LevelGroup[]>(
-  (out, level) => (out.includes(level.group) ? out : [...out, level.group]),
-  [],
+export const LEVEL_GROUPS: LevelGroup[] = ['Reading', 'Scales', 'Blues', 'Jazz']
+
+/**
+ * The course in order, with each section kept whole.
+ *
+ * Grouping by section rather than trusting the array to be written in the right
+ * order means a tab always shows a run of consecutive numbers: the levels in it
+ * are levels 9 to 16, not 9, 10 and then 18 to 23. It also makes the two facts a
+ * level carries — where it sits and what it is about — stop being able to
+ * disagree, which they did the moment fifteen new levels were appended to the
+ * end of a list that was already grouped.
+ *
+ * The sort is stable, so within a section the written order is the played order.
+ */
+export const LEVELS: Level[] = [...COURSE].sort(
+  (a, b) => LEVEL_GROUPS.indexOf(a.group) - LEVEL_GROUPS.indexOf(b.group),
 )
 
 export const levelById = (id: string): Level | undefined => LEVELS.find((l) => l.id === id)

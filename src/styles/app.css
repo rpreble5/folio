@@ -2021,10 +2021,34 @@ button {
   background: transparent;
   min-width: 0;
   max-width: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+
+/*
+ * And the same on the other axis, for the same reason.
+ *
+ * A prompt laid out on two lines is taller than one on one line, and a flex item
+ * overflows its container vertically just as happily as horizontally — the
+ * second staff of a two-bar lick was simply below the bottom of the screen.
+ */
+/*
+ * Capped against the viewport rather than against the parent.
+ *
+ * A percentage max-height only resolves if every ancestor up to a definite
+ * height has one, and neither the prompt nor this stack does — they are sized by
+ * their contents, which is exactly what needs limiting. Measuring from the
+ * window and subtracting the chrome above and below it is the version that
+ * actually binds. The subtraction is the header, the hint line and the stage's
+ * own bottom padding.
+ */
+.prompt-stack {
+  max-height: calc(100vh - 160px);
 }
 
 .prompt-stack .score {
   height: auto;
+  max-height: calc(100vh - 160px);
 }
 
 .practice__prompt--right {

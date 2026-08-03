@@ -64,6 +64,16 @@ export interface Column {
   ink: number
   /** Stretchable room, from the gap to the next column. */
   spring: number
+  /**
+   * Whether anything is actually written here.
+   *
+   * False for the terminal column, which exists only so the last real column has
+   * something to be spaced against. It sits at the system's end beat — which is
+   * also the *next* system's first beat — so anything that looks up notes by
+   * column beat finds the next system's first chord and draws it again at the
+   * right-hand edge of this one.
+   */
+  content: boolean
 }
 
 /** A rest, placed. Drawn by the glyph layer; here only to occupy a column. */
@@ -267,6 +277,7 @@ function buildColumns(
       rod: (spacing.crowd + (dots > 0 ? spacing.dot * dots : 0)) * headWidth,
       ink: (1 + (dots > 0 ? spacing.dot * dots : 0)) * headWidth,
       spring: 0,
+      content: true,
     }
   })
 
@@ -277,6 +288,7 @@ function buildColumns(
     rod: 0,
     ink: 0,
     spring: 0,
+    content: false,
   })
 
   for (let i = 0; i < columns.length - 1; i += 1) {
@@ -346,6 +358,7 @@ function placeNotes(
   const { score, theme, yFor, axisPosition, noteHeight } = input
 
   for (const column of columns) {
+    if (!column.content) continue
     for (const note of notesByBeat.get(quantize(column.beat)) ?? []) {
       const key = keyAt(score, note.onset)
       const style = resolveStyle(note, theme, key)
@@ -432,6 +445,7 @@ function placeRests(
   const placed: PlacedRest[] = []
 
   for (const column of columns) {
+    if (!column.content) continue
     for (const rest of restsByBeat.get(quantize(column.beat)) ?? []) {
       const clef = clefAt(score, rest.onset, rest.staff)
       placed.push({

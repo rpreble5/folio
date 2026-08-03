@@ -111,6 +111,22 @@ export interface ScoreOptions {
   spell?: 'sharp' | 'flat'
   /** Beats per step. Defaults to a whole bar for a lone step, a quarter otherwise. */
   beatsPerStep?: number
+  /**
+   * Give the lowest `bass` notes of every step to the left hand.
+   *
+   * A step of `[43, 64, 67]` with `bass: 1` becomes a bass note under a
+   * right-hand pair — one simultaneity, two staves. This is the difference
+   * between an exercise for a hand and an exercise for a pianist, and it is why
+   * the rests below are worked out per staff per bar rather than being handed
+   * wholesale to whichever hand is not playing.
+   *
+   * By count rather than by a pitch, because a pitch is not what the music
+   * means. Dividing at middle C worked until a voicing was transposed to a key
+   * where its third landed a semitone under the line — whereupon the left hand
+   * was handed a root and a third a tenth apart, and the right hand one note.
+   * "The bottom note is the bass" is true in every key.
+   */
+  bass?: number
 }
 
 /** Beats in a bar. Everything generated here is in four. */
@@ -146,8 +162,18 @@ export function scoreFor(
   id: string,
   options: ScoreOptions = {},
 ): Score {
-  const staff = hand === 'left' ? 2 : 1
-  const other = staff === 1 ? 2 : 1
+  /*
+   * Which hand plays a note, and so which staff it is written on.
+   *
+   * Needs the step it belongs to, not just its pitch: "the lowest one" is a fact
+   * about the chord, and the same pitch can be the bass of one chord and the top
+   * of the next.
+   */
+  const handFor = (midi: number, step: number[]): 'left' | 'right' => {
+    if (options.bass === undefined) return hand
+    const cut = [...step].sort((a, b) => a - b)[Math.min(options.bass, step.length) - 1]
+    return midi <= cut ? 'left' : 'right'
+  }
   const single = steps.length === 1
   const beats = options.beatsPerStep ?? (single ? BAR : 1)
   const played = steps.length * beats
@@ -178,11 +204,14 @@ export function scoreFor(
   const perBeam = beats < 1 ? Math.round(beamBeats / beats) : 0
   const beamsAt = (i: number): BeamState[] | undefined => {
     if (perBeam < 2) return undefined
-    const place = i % perBeam
-    // A group cut short by the end of the material is left unbeamed rather than
-    // opened and never closed, which would draw a beam running off the bar.
-    if (i - place + perBeam > steps.length) return undefined
-    return [place === 0 ? 'begin' : place === perBeam - 1 ? 'end' : 'continue']
+    const start = i - (i % perBeam)
+    // A group cut short by the end of the material is closed early rather than
+    // abandoned: three eighths left over at the end of a two-octave scale are
+    // still beamed together, and leaving them as three separate flags made the
+    // end of the run look like a different kind of music from the start of it.
+    const end = Math.min(start + perBeam, steps.length)
+    if (end - start < 2) return undefined
+    return [i === start ? 'begin' : i === end - 1 ? 'end' : 'continue']
   }
 
   const spell = (midi: number) =>
@@ -198,7 +227,7 @@ export function scoreFor(
         duration: beats,
         midi,
         spelling,
-        hand,
+        hand: handFor(midi, step),
         voice: 1,
         measure: Math.floor((i * beats) / barBeats),
         velocity: 0.8,
@@ -211,31 +240,55 @@ export function scoreFor(
   )
   markBarStarts(notes)
 
+  /*
+   * Rests, worked out bar by bar and staff by staff.
+   *
+   * A staff with nothing in a bar gets a whole-bar rest; a staff that is playing
+   * gets a rest for whatever is left over at the end. Written as a rule rather
+   * than as "the hand that is not playing rests throughout", so that a prompt
+   * using both hands is filled correctly instead of having a whole-bar rest laid
+   * over the top of music.
+   *
+   * For a one-hand prompt this produces exactly what the old rule did.
+   */
   const rests: RestEvent[] = []
-  // One whole-bar rest per bar on the resting hand.
   for (let bar = 0; bar < bars; bar += 1) {
-    rests.push({
-      id: `${id}-rest-${bar}`,
-      onset: bar * barBeats,
-      duration: barBeats,
-      staff: other,
-      voice: 1,
-      measure: bar,
-      wholeBar: true,
-      notated: { segments: [{ type: 'whole', dots: 0, beats: barBeats }] },
-    })
-  }
-  // And whatever is left of the last bar on the playing hand.
-  if (total > played) {
-    rests.push({
-      id: `${id}-tail`,
-      onset: played,
-      duration: total - played,
-      staff,
-      voice: 1,
-      measure: bars - 1,
-      notated: { segments: [{ type: type(total - played), dots: 0, beats: total - played }] },
-    })
+    const from = bar * barBeats
+    const to = from + barBeats
+    for (const staff of [1, 2]) {
+      const busy = notes.some(
+        (n) =>
+          (n.hand === 'left' ? 2 : 1) === staff &&
+          n.onset < to - 1e-6 &&
+          n.onset + n.duration > from + 1e-6,
+      )
+      if (!busy) {
+        rests.push({
+          id: `${id}-rest-${staff}-${bar}`,
+          onset: from,
+          duration: barBeats,
+          staff,
+          voice: 1,
+          measure: bar,
+          wholeBar: true,
+          notated: { segments: [{ type: 'whole', dots: 0, beats: barBeats }] },
+        })
+        continue
+      }
+      // The tail of the last bar, on a staff that has been playing.
+      const silentFrom = Math.max(from, played)
+      if (silentFrom < to - 1e-6) {
+        rests.push({
+          id: `${id}-tail-${staff}-${bar}`,
+          onset: silentFrom,
+          duration: to - silentFrom,
+          staff,
+          voice: 1,
+          measure: bar,
+          notated: { segments: [{ type: type(to - silentFrom), dots: 0, beats: to - silentFrom }] },
+        })
+      }
+    }
   }
 
   return {
