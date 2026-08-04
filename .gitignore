@@ -48,3 +48,4 @@ tempo-*.png
 adv-*.png
 .sizecheck.mjs
 .wrapprobe.mjs
+.memorycheck.mjs

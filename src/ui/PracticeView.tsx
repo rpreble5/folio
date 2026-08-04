@@ -25,12 +25,15 @@ import {
   DEFAULT_DRILL,
   generateDrill,
   barsIn,
+  notesOf,
   pitchesOf,
   summarise,
   type Attempt,
   type DrillConfig,
   type Prompt,
 } from '../practice/drills'
+import { buildRun } from '../practice/adapt'
+import { loadHistory, record, slowestNotes, type History } from '../practice/history'
 import { LEVELS, LEVEL_GROUPS, type Level, type LevelGroup } from '../practice/levels'
 import { loadProgress, recordResult, unlockedCount, type Progress } from '../practice/progress'
 import { loadTempo, saveTempo, stepTempo, TEMPI } from '../practice/settings'
@@ -82,6 +85,15 @@ export function PracticeView() {
   const [demoBeat, setDemoBeat] = useState<number | null>(null)
   const [doctor, setDoctor] = useState(false)
   const [progress, setProgress] = useState<Progress>(() => loadProgress())
+  const [history, setHistory] = useState<History>(() => loadHistory())
+  /**
+   * Where the extra turns start.
+   *
+   * Everything before it is the level as written; everything after is a repeat
+   * of something that went badly. Kept as an index rather than a flag per
+   * prompt because the extras are always appended, so one number says it.
+   */
+  const [extraFrom, setExtraFrom] = useState(0)
   const [bpm, setBpm] = useState<number>(() => loadTempo())
   /**
    * Bumped to play the prompt through again.
@@ -144,8 +156,10 @@ export function PracticeView() {
     // The click that got here is the gesture a browser wants before it will
     // make a sound, and a demo that arrives silently is worse than none.
     void player.unlock()
+    const run = buildRun(next.make(key, seed), history, next.id, seed)
     setLevel(next)
-    setPrompts(next.make(key, seed))
+    setPrompts(run.prompts)
+    setExtraFrom(run.extraFrom)
     setAttempts([])
     setIndex(0)
     setStage('running')
@@ -153,8 +167,10 @@ export function PracticeView() {
   }
 
   const startFree = () => {
+    const run = buildRun(generateDrill(config, key, seed), history, 'free', seed)
     setLevel(null)
-    setPrompts(generateDrill(config, key, seed))
+    setPrompts(run.prompts)
+    setExtraFrom(run.extraFrom)
     setAttempts([])
     setIndex(0)
     setStage('running')
@@ -252,15 +268,22 @@ export function PracticeView() {
 
       settling.current = true
       setFlash('right')
+      const ms = Math.round(performance.now() - shownAt.current)
       setAttempts((list) => [
         ...list,
-        {
-          promptId: prompt.id,
-          pitches: pitchesOf(prompt),
-          ms: Math.round(performance.now() - shownAt.current),
-          wrong: wrongRef.current,
-        },
+        { promptId: prompt.id, pitches: pitchesOf(prompt), ms, wrong: wrongRef.current },
       ])
+      // Written down rather than summarised and forgotten. This is the whole
+      // of what the next run has to go on.
+      setHistory((h) =>
+        record(h, {
+          levelId: level?.id ?? 'free',
+          promptId: prompt.id,
+          notes: notesOf(prompt),
+          ms,
+          wrong: wrongRef.current,
+        }),
+      )
       window.setTimeout(() => {
         setIndex((i) => i + 1)
         beginPrompt()
@@ -268,7 +291,7 @@ export function PracticeView() {
     })
 
     return stop
-  }, [stage, prompt, beginPrompt])
+  }, [stage, prompt, beginPrompt, level?.id])
 
   /**
    * Play the prompt once before the attempt.
@@ -371,14 +394,21 @@ export function PracticeView() {
   // Finishing the last prompt ends the run, and a level's result is recorded.
   useEffect(() => {
     if (stage !== 'running' || prompts.length === 0 || index < prompts.length) return
-    const clean = attempts.filter((a) => a.wrong === 0).length / Math.max(1, attempts.length)
+    // Scored on the level as written, not on the extra turns. The extras are
+    // there because something went wrong; counting them would make being bad at
+    // a level the reason it is harder to pass.
+    const scored = attempts.slice(0, extraFrom)
+    const clean = scored.filter((a) => a.wrong === 0).length / Math.max(1, scored.length)
     if (level) setProgress((p) => recordResult(p, level.id, clean))
     setStage('summary')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, prompts.length, stage])
 
   const support = midiSupport()
-  const summary = useMemo(() => summarise(attempts), [attempts])
+  const summary = useMemo(() => summarise(attempts.slice(0, extraFrom)), [attempts, extraFrom])
+  /** How many extra turns this run earned, and how many were played. */
+  const extras = Math.max(0, attempts.length - extraFrom)
+  const remembered = useMemo(() => slowestNotes(history, 3), [history])
   const unlocked = unlockedCount(progress)
 
   /**
@@ -559,10 +589,19 @@ export function PracticeView() {
                   : `${Math.round(level.pass * 100)}% needed to pass`}
               </div>
             )}
-            {summary.slowest.length > 0 && (
+            {extras > 0 && (
+              <div className="practice__stat" style={{ color: theme.surface.muted }}>
+                {extras === 1 ? 'one extra turn' : `${extras} extra turns`} on what went wrong
+              </div>
+            )}
+            {/* From the record rather than from this run: three prompts is far
+                too little to say which note somebody finds hard, and the answer
+                is much more useful when it is drawn from every run there has
+                been. */}
+            {remembered.length > 0 && (
               <div className="practice__slow" style={{ color: theme.surface.muted }}>
                 slowest to read:{' '}
-                {summary.slowest
+                {remembered
                   .map((s) => `${noteName(spellPitch(s.midi, key), true)} ${(s.ms / 1000).toFixed(1)}s`)
                   .join(' · ')}
               </div>

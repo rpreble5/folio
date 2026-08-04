@@ -68,6 +68,17 @@ export interface Prompt {
 /** Everything a prompt asks for, flattened. For statistics, not for matching. */
 export const pitchesOf = (prompt: Prompt): number[] => prompt.steps.flat()
 
+/**
+ * The same notes, with the staff each was written on.
+ *
+ * Taken from the score rather than from the steps, because the staff is the
+ * half of a note's identity that the steps do not carry — and reading middle C
+ * on the bass staff is a different skill from reading it on the treble, which
+ * is exactly the sort of thing a practice record should be able to tell apart.
+ */
+export const notesOf = (prompt: Prompt): { staff: number; midi: number }[] =>
+  prompt.score.notes.map((note) => ({ staff: note.hand === 'left' ? 2 : 1, midi: note.midi }))
+
 export interface Attempt {
   promptId: string
   pitches: number[]
