@@ -49,3 +49,7 @@ adv-*.png
 .sizecheck.mjs
 .wrapprobe.mjs
 .memorycheck.mjs
+.sessioncheck.mjs
+.sessionshot.mjs
+session-*.png
+.bgprobe.mjs

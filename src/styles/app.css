@@ -2350,7 +2350,11 @@ body {
 .levels {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* Tightened when the session card joined the list. Ten cards is one more than
+     the layout was drawn for, and two pixels off the gap and the padding buys
+     back the row without making anything harder to hit — the cards are still
+     well over the forty-four-pixel target. */
+  gap: 6px;
   width: min(520px, 100%);
 }
 
@@ -2395,7 +2399,7 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 13px 15px;
+  padding: 11px 15px;
   border-radius: var(--radius-sm);
   text-align: left;
   /* Background and text come from the theme inline: this screen is painted with
@@ -2436,6 +2440,25 @@ body {
 
 .level--free .level__mark {
   background: transparent !important;
+}
+
+/*
+ * The session card.
+ *
+ * The only thing on this screen that is an instruction rather than a menu
+ * entry, so it gets the accent — the one colour on the page that is the
+ * reader's own — and a little more room. Everything else here is a choice; this
+ * is the app having an opinion about what to do next, and it should look like
+ * one.
+ */
+.level--session {
+  padding: 13px 15px;
+  margin-bottom: 2px;
+}
+
+.level__mark--session {
+  background: transparent !important;
+  font-size: 11px;
 }
 
 .level__body {

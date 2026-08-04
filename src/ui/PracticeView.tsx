@@ -32,7 +32,8 @@ import {
   type DrillConfig,
   type Prompt,
 } from '../practice/drills'
-import { buildRun } from '../practice/adapt'
+import { buildRun, type Scored } from '../practice/adapt'
+import { buildSession, canPlanSession } from '../practice/plan'
 import { loadHistory, record, slowestNotes, type History } from '../practice/history'
 import { LEVELS, LEVEL_GROUPS, type Level, type LevelGroup } from '../practice/levels'
 import { loadProgress, recordResult, unlockedCount, type Progress } from '../practice/progress'
@@ -87,13 +88,23 @@ export function PracticeView() {
   const [progress, setProgress] = useState<Progress>(() => loadProgress())
   const [history, setHistory] = useState<History>(() => loadHistory())
   /**
-   * Where the extra turns start.
+   * Which prompts of the run count toward the pass mark.
    *
-   * Everything before it is the level as written; everything after is a repeat
-   * of something that went badly. Kept as an index rather than a flag per
-   * prompt because the extras are always appended, so one number says it.
+   * A range, because the assessed part is not always at the front: a level run
+   * is the level and then extra turns, and a session is a warm-up and some
+   * review before the level it is assessing.
    */
-  const [extraFrom, setExtraFrom] = useState(0)
+  const [scored, setScored] = useState<Scored>({ from: 0, to: 0 })
+  /** What to call each prompt in the header, when a run has parts. */
+  const [labels, setLabels] = useState<string[]>([])
+  /**
+   * Whether each prompt plays itself through first.
+   *
+   * Per prompt rather than per level, because a session draws from several
+   * levels that disagree — and taking it from the level being *assessed* meant
+   * a session ending in a scale played the answer for its reading warm-up.
+   */
+  const [demos, setDemos] = useState<boolean[]>([])
   const [bpm, setBpm] = useState<number>(() => loadTempo())
   /**
    * Bumped to play the prompt through again.
@@ -159,7 +170,9 @@ export function PracticeView() {
     const run = buildRun(next.make(key, seed), history, next.id, seed)
     setLevel(next)
     setPrompts(run.prompts)
-    setExtraFrom(run.extraFrom)
+    setScored(run.scored)
+    setLabels([])
+    setDemos(run.prompts.map(() => !!next.demo))
     setAttempts([])
     setIndex(0)
     setStage('running')
@@ -170,7 +183,30 @@ export function PracticeView() {
     const run = buildRun(generateDrill(config, key, seed), history, 'free', seed)
     setLevel(null)
     setPrompts(run.prompts)
-    setExtraFrom(run.extraFrom)
+    setScored(run.scored)
+    setLabels([])
+    setDemos([])
+    setAttempts([])
+    setIndex(0)
+    setStage('running')
+    beginPrompt()
+  }
+
+  /**
+   * A whole session: warm up, review, then the level being learnt.
+   *
+   * The level is set to the assessed part, so finishing a session passes and
+   * unlocks exactly as playing that level would — the session is a better way
+   * to arrive at it, not a different currency.
+   */
+  const startSession = () => {
+    void player.unlock()
+    const session = buildSession(key, seed, history, progress)
+    setLevel(session.level)
+    setPrompts(session.prompts)
+    setScored(session.scored)
+    setLabels(session.labels)
+    setDemos(session.demos)
     setAttempts([])
     setIndex(0)
     setStage('running')
@@ -304,7 +340,7 @@ export function PracticeView() {
    * appears, or listening would count against the reader as hesitation.
    */
   useEffect(() => {
-    if (stage !== 'running' || !prompt || !level?.demo) return
+    if (stage !== 'running' || !prompt || !(demos[index] ?? false)) return
 
     let frame = 0
     let cancelled = false
@@ -356,7 +392,7 @@ export function PracticeView() {
     // restart the play-through. `replay` is the deliberate way to ask for that,
     // and it is only bumped while the demo is actually sounding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, prompt?.id, level, beginPrompt, replay])
+  }, [stage, prompt?.id, index, demos, beginPrompt, replay])
 
   /**
    * Let the wrong-note wash fade.
@@ -397,18 +433,33 @@ export function PracticeView() {
     // Scored on the level as written, not on the extra turns. The extras are
     // there because something went wrong; counting them would make being bad at
     // a level the reason it is harder to pass.
-    const scored = attempts.slice(0, extraFrom)
-    const clean = scored.filter((a) => a.wrong === 0).length / Math.max(1, scored.length)
+    const assessed = attempts.slice(scored.from, scored.to)
+    const clean = assessed.filter((a) => a.wrong === 0).length / Math.max(1, assessed.length)
     if (level) setProgress((p) => recordResult(p, level.id, clean))
     setStage('summary')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, prompts.length, stage])
 
   const support = midiSupport()
-  const summary = useMemo(() => summarise(attempts.slice(0, extraFrom)), [attempts, extraFrom])
-  /** How many extra turns this run earned, and how many were played. */
-  const extras = Math.max(0, attempts.length - extraFrom)
+  const summary = useMemo(
+    () => summarise(attempts.slice(scored.from, scored.to)),
+    [attempts, scored],
+  )
+  /** Turns played outside the assessed range: extras, or a session's warm-up. */
+  const extras = Math.max(0, attempts.length - (scored.to - scored.from))
   const remembered = useMemo(() => slowestNotes(history, 3), [history])
+  /*
+   * What today's session would be, described.
+   *
+   * Built on the menu so the card can say what it holds rather than being a
+   * button labelled "practice" that does something unexplained. Only offered
+   * once something has been passed: before that a session is a warm-up nobody
+   * has learnt, a review of nothing, and level one — which the list says better.
+   */
+  const sessionPlan = useMemo(
+    () => (canPlanSession(progress) ? buildSession(key, seed, history, progress) : null),
+    [key, seed, history, progress],
+  )
   const unlocked = unlockedCount(progress)
 
   /**
@@ -528,13 +579,18 @@ export function PracticeView() {
     <div className="practice" style={{ background: theme.surface.background }}>
       <header className="practice__top" style={{ color: theme.surface.text }}>
         <span className="practice__title">
-          {stage === 'running' && level ? level.name : 'Rapid fire'}
+          {/* A session says which part of itself you are in — warm up, review,
+              or the level's own name — because "review" is the difference
+              between a bar that matters and one that does not. */}
+          {stage === 'running'
+            ? labels[index] ?? level?.name ?? 'Rapid fire'
+            : 'Rapid fire'}
         </span>
         <span className="practice__spacer" />
         {/* Only where it does something. A tempo control on a reading drill,
             which never plays itself, is a dial wired to nothing. Free play
             leaves the level null, so it drops out here too. */}
-        {(stage === 'menu' || level?.demo) && (
+        {(stage === 'menu' || demos.some(Boolean)) && (
           <Tempo bpm={bpm} muted={theme.surface.muted} onStep={nudgeTempo} />
         )}
         {stage === 'running' && (
@@ -665,6 +721,8 @@ export function PracticeView() {
             progress={progress}
             unlocked={unlocked}
             surface={theme.surface}
+            session={sessionPlan}
+            onSession={startSession}
             onPick={startLevel}
             onFree={() => setStage('free')}
           />
@@ -752,12 +810,16 @@ function Levels({
   progress,
   unlocked,
   surface,
+  session,
+  onSession,
   onPick,
   onFree,
 }: {
   progress: Progress
   unlocked: number
   surface: Theme['surface']
+  session: { summary: string; prompts: unknown[] } | null
+  onSession(): void
   onPick(level: Level): void
   onFree(): void
 }) {
@@ -783,6 +845,21 @@ function Levels({
 
   return (
     <div className="levels">
+      {/* Above the tabs, because it is the answer to the question the tabs
+          exist to help you answer yourself. Someone who knows what they want
+          scrolls past it; someone who just sat down does not have to decide. */}
+      {session && session.prompts.length > 0 && (
+        <button className="level level--session" onClick={onSession} style={card}>
+          <span className="level__mark level__mark--session">▶</span>
+          <span className="level__body">
+            <span className="level__name">Practise</span>
+            <span className="level__goal" style={{ color: surface.muted }}>
+              {session.summary}
+            </span>
+          </span>
+        </button>
+      )}
+
       <div className="levels__tabs" role="tablist">
         {LEVEL_GROUPS.map((group) => {
           const mine = LEVELS.filter((l) => l.group === group)

@@ -37,17 +37,25 @@ const WORTH_REPEATING = 1.6
 const EXTRA_FRACTION = 0.5
 const EXTRA_LIMIT = 4
 
+/**
+ * Which prompts of a run count toward the pass mark.
+ *
+ * A range rather than a length, because the assessed part is not always at the
+ * front: a level run is the level and then some extra turns, but a session is a
+ * warm-up and some review *before* the level it is assessing.
+ *
+ * Everything outside the range is practice. The extra turns are there because
+ * something went wrong, and counting them would mean being bad at a level makes
+ * it harder to pass — a penalty for needing the practice they exist to give.
+ */
+export interface Scored {
+  from: number
+  to: number
+}
+
 export interface Run {
   prompts: Prompt[]
-  /**
-   * Index at which the extra turns begin.
-   *
-   * Everything from here on is practice rather than assessment: it is there
-   * because something went wrong earlier, and counting it towards the pass mark
-   * would mean being bad at a level makes it harder to pass — a penalty for
-   * needing the practice the extras exist to give.
-   */
-  extraFrom: number
+  scored: Scored
 }
 
 /** Deterministic, so a run can be replayed exactly given the same history. */
@@ -76,8 +84,8 @@ export function buildRun(
   levelId: string,
   seed: number,
 ): Run {
-  const extraFrom = prompts.length
-  if (prompts.length === 0) return { prompts, extraFrom }
+  const scored: Scored = { from: 0, to: prompts.length }
+  if (prompts.length === 0) return { prompts, scored }
 
   const day = today()
   const pool = prompts
@@ -87,7 +95,7 @@ export function buildRun(
     }))
     .filter((entry) => entry.weight >= WORTH_REPEATING)
 
-  if (pool.length === 0) return { prompts, extraFrom }
+  if (pool.length === 0) return { prompts, scored }
 
   const count = Math.min(
     EXTRA_LIMIT,
@@ -120,5 +128,5 @@ export function buildRun(
     extras.push(pool[index].prompt)
   }
 
-  return { prompts: [...prompts, ...extras], extraFrom }
+  return { prompts: [...prompts, ...extras], scored }
 }
