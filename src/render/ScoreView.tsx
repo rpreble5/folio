@@ -482,7 +482,13 @@ function SystemGroup({
             >
               {headGlyph?.(placed) ? (
                 <path
-                  className="score__head"
+                  /* Lights when it sounds, like every other notehead. The
+                     active flag was being computed here and then dropped: an
+                     engraved score is drawn with Bravura paths rather than with
+                     NoteGlyph, and only NoteGlyph carried the class — so the
+                     playhead and the practice play-through lit nothing at all
+                     in the one theme most likely to be reading real music. */
+                  className={`score__head${active ? ' score__head--active' : ''}`}
                   d={headGlyph(placed)!.path}
                   transform={`translate(${placed.x + (placed.dx ?? 0)}, ${placed.y + placed.height / 2}) scale(${space})`}
                   fill={placed.style.filled ? placed.style.fill : 'none'}

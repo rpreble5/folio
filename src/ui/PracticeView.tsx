@@ -36,7 +36,13 @@ import { buildRun, type Scored } from '../practice/adapt'
 import { buildSession, canPlanSession } from '../practice/plan'
 import { loadHistory, record, slowestNotes, type History } from '../practice/history'
 import { LEVELS, LEVEL_GROUPS, type Level, type LevelGroup } from '../practice/levels'
-import { loadProgress, recordResult, unlockedCount, type Progress } from '../practice/progress'
+import {
+  isPassed,
+  loadProgress,
+  recordResult,
+  unlockedCount,
+  type Progress,
+} from '../practice/progress'
 import { loadTempo, saveTempo, stepTempo, TEMPI } from '../practice/settings'
 import { midiSupport } from '../io/midi'
 import { bluetoothSupport } from '../io/blemidi'
@@ -45,8 +51,14 @@ import { GhostNote } from './GhostNote'
 import { Field, Group, Pills, Range } from './controls'
 import type { Theme } from '../core/theme'
 
-/** How long the "right" flash sits before the next prompt. */
-const SETTLE_MS = 170
+/**
+ * How long the "right" flash sits before the next prompt.
+ *
+ * Also the window the hand-off animation gets: the answered bar spends it
+ * leaving, so the pause is doing two jobs rather than being dead time with a
+ * cut at the end of it.
+ */
+const SETTLE_MS = 260
 
 /**
  * How long on one step before a wrong note is shown back to you.
@@ -95,6 +107,22 @@ export function PracticeView() {
    * review before the level it is assessing.
    */
   const [scored, setScored] = useState<Scored>({ from: 0, to: 0 })
+  /**
+   * The answered prompt is on its way out.
+   *
+   * A prompt used to be replaced by a hard cut — and in a run of forty that is
+   * forty hard cuts at the exact spot the eyes are locked to. The settle after
+   * a right answer was already being spent, so it is spent on this instead.
+   */
+  const [leaving, setLeaving] = useState(false)
+  /**
+   * The level just passed, if this run passed one that was not passed before.
+   *
+   * Carried back to the list because that is where unlocking is *seen* — the
+   * summary can say it in words, but the thing that actually happened is a card
+   * further down having stopped being grey.
+   */
+  const [justPassed, setJustPassed] = useState<string | null>(null)
   /** What to call each prompt in the header, when a run has parts. */
   const [labels, setLabels] = useState<string[]>([])
   /**
@@ -152,6 +180,7 @@ export function PracticeView() {
   const endDemo = useRef<(() => void) | null>(null)
 
   const beginPrompt = useCallback(() => {
+    setLeaving(false)
     heldRef.current = new Set()
     stepRef.current = 0
     wrongRef.current = 0
@@ -304,6 +333,10 @@ export function PracticeView() {
 
       settling.current = true
       setFlash('right')
+      // Start the answered prompt on its way out. Nothing else changes yet —
+      // the music stays put and readable while it fades, which is why the
+      // travel is a few pixels rather than a slide.
+      setLeaving(true)
       const ms = Math.round(performance.now() - shownAt.current)
       setAttempts((list) => [
         ...list,
@@ -435,7 +468,13 @@ export function PracticeView() {
     // a level the reason it is harder to pass.
     const assessed = attempts.slice(scored.from, scored.to)
     const clean = assessed.filter((a) => a.wrong === 0).length / Math.max(1, assessed.length)
-    if (level) setProgress((p) => recordResult(p, level.id, clean))
+    if (level) {
+      // Crossing the line, not merely being over it: replaying a level you
+      // already passed should not announce itself as news.
+      const crossed = !isPassed(progress, level.id) && clean >= level.pass
+      setProgress((p) => recordResult(p, level.id, clean))
+      if (crossed) setJustPassed(level.id)
+    }
     setStage('summary')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, prompts.length, stage])
@@ -679,10 +718,21 @@ export function PracticeView() {
             </div>
           </div>
         ) : stage === 'running' && prompt && layout ? (
-          <div className={`practice__prompt practice__prompt--${flash}`}>
+          <div
+            className={
+              `practice__prompt practice__prompt--${flash}` +
+              `${leaving ? ' practice__prompt--leaving' : ''}`
+            }
+          >
             {/* The ghost is painted over this stack rather than added to the
                 score, so the music never moves when the hint appears. */}
-            <div className="prompt-stack">
+            {/* Keyed on the position in the run, so each prompt is a new
+                element and arrives with its own entry — including when the same
+                bar comes round again as an extra turn. */}
+            <div
+              className={`prompt-stack${leaving ? ' prompt-stack--leaving' : ''}`}
+              key={index}
+            >
               <ScoreView
                 score={prompt.score}
                 theme={promptTheme}
@@ -722,6 +772,7 @@ export function PracticeView() {
             unlocked={unlocked}
             surface={theme.surface}
             session={sessionPlan}
+            justPassed={justPassed}
             onSession={startSession}
             onPick={startLevel}
             onFree={() => setStage('free')}
@@ -811,6 +862,7 @@ function Levels({
   unlocked,
   surface,
   session,
+  justPassed,
   onSession,
   onPick,
   onFree,
@@ -819,12 +871,29 @@ function Levels({
   unlocked: number
   surface: Theme['surface']
   session: { summary: string; prompts: unknown[] } | null
+  justPassed: string | null
   onSession(): void
   onPick(level: Level): void
   onFree(): void
 }) {
   const card = { background: surface.panel, color: surface.text }
   const done = (level: Level) => (progress.best[level.id] ?? 0) >= level.pass
+
+  /*
+   * The one-shot arrival, shown once and then let go.
+   *
+   * Held locally rather than read from the prop every render, because switching
+   * tabs remounts the cards and would otherwise replay the whole thing every
+   * time — a moment that repeats on demand is not a moment.
+   */
+  const [landed, setLanded] = useState<string | null>(justPassed)
+  useEffect(() => {
+    if (!landed) return
+    const timer = window.setTimeout(() => setLanded(null), 1400)
+    return () => window.clearTimeout(timer)
+  }, [landed])
+  const landedIndex = landed ? LEVELS.findIndex((l) => l.id === landed) : -1
+  const openedId = landedIndex >= 0 ? LEVELS[landedIndex + 1]?.id : undefined
 
   /*
    * The level you would play next: the first one open and not yet passed, or —
@@ -896,13 +965,17 @@ function Levels({
         return (
           <button
             key={level.id}
-            className={`level${passed ? ' level--done' : ''}${open ? '' : ' level--locked'}`}
+            className={
+              `level${passed ? ' level--done' : ''}${open ? '' : ' level--locked'}` +
+              `${level.id === landed ? ' level--landed' : ''}` +
+              `${level.id === openedId ? ' level--opened' : ''}`
+            }
             onClick={() => open && onPick(level)}
             disabled={!open}
             style={card}
           >
             <span className="level__mark" style={{ background: surface.grid }}>
-              {passed ? '✓' : open ? i + 1 : '·'}
+              <span className="level__tick">{passed ? '✓' : open ? i + 1 : '·'}</span>
             </span>
             <span className="level__body">
               <span className="level__name">{level.name}</span>

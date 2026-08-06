@@ -38,8 +38,18 @@
 
   /* Slow enough to read. Calm reads as unhurried, not as sluggish. */
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* For things leaving. The house ease is a strong ease-out, which is right for
+     arrivals and wrong for exits — it takes most of the distance in the first
+     fifth, so a departing element is gone almost at once and leaves a hole
+     where it was. Easing in instead means it is still there while the next
+     thing is on its way. */
+  --ease-out: cubic-bezier(0.4, 0, 1, 1);
   --dur: 280ms;
   --dur-fast: 180ms;
+  /* How long a note takes to stop glowing after it has stopped sounding. Longer
+     than any interface duration, because it is standing in for a piano's decay
+     rather than for a control changing state. */
+  --dur-release: 420ms;
 
   --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto,
     'Helvetica Neue', sans-serif;
@@ -1588,16 +1598,33 @@ button {
 
 /* ---------------------------------------------------------------- notes --- */
 
+/*
+ * A note lights the instant it sounds, and lets go slowly.
+ *
+ * Asymmetric on purpose, because that is what the sound does — a piano note has
+ * no attack to speak of and a long tail, and a highlight that snaps off at the
+ * same speed it snapped on reads as a switch being flipped rather than a note
+ * being played. The instant attack matters as much as the slow release: a
+ * fade-in would put the light behind the key, and the whole value of this during
+ * a play-through is that it lands exactly with the sound.
+ *
+ * Done by overriding only the filter's duration on the active rule, so a note
+ * lighting up mid-drag in the colour lab still animates its fill.
+ */
 .note rect,
 .note ellipse,
-.note path {
-  transition: fill var(--dur) var(--ease), opacity var(--dur-fast) var(--ease);
+.note path,
+.score__head {
+  transition: fill var(--dur) var(--ease), opacity var(--dur-fast) var(--ease),
+    filter var(--dur-release) var(--ease);
 }
 
 .note--active rect,
 .note--active ellipse,
-.note--active path {
+.note--active path,
+.score__head--active {
   filter: brightness(1.5);
+  transition: fill var(--dur) var(--ease), opacity var(--dur-fast) var(--ease), filter 0s;
 }
 
 .playhead--live line,
@@ -2059,6 +2086,21 @@ button {
   background: rgba(255, 140, 140, 0.13);
 }
 
+/*
+ * The wash leaves with the music.
+ *
+ * It is a wash *behind* the bar, and once the bar has faded out from in front
+ * of it what is left is a large green rectangle sitting on its own — which is
+ * how it looked for about a sixth of a second on every single answer. The
+ * feedback has been delivered by then; the colour has no reason to outlive the
+ * thing it was commenting on.
+ *
+ * After the flash rules, so it wins over them.
+ */
+.practice__prompt--leaving {
+  background: transparent;
+}
+
 .practice__intro,
 .practice__setup,
 .practice__summary {
@@ -2438,6 +2480,41 @@ body {
   color: #2e9c63;
 }
 
+/*
+ * Passing a level, and the one below it opening.
+ *
+ * The whole event is two things fading: a tick arriving where a number was, and
+ * the next card stopping being grey. No bounce, no colour flash, nothing that
+ * springs — an adult who has just played a scale correctly does not need to be
+ * congratulated, they need to be shown what happened. The second beat is
+ * delayed behind the first so it reads as a consequence rather than as two
+ * things twitching at once.
+ *
+ * It plays once. A moment you can replay by tapping a tab is not a moment.
+ */
+.level--landed .level__tick {
+  display: inline-block;
+  animation: tick-in 420ms var(--ease) both;
+}
+
+@keyframes tick-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+
+.level--opened {
+  animation: level-open 560ms var(--ease) 260ms both;
+}
+
+@keyframes level-open {
+  from {
+    opacity: 0.45;
+    transform: translateY(3px);
+  }
+}
+
 .level--free .level__mark {
   background: transparent !important;
 }
@@ -2499,9 +2576,35 @@ body {
  * with no padding of its own is what makes `inset: 0` mean "the same place the
  * score starts" rather than "the same place the padding starts".
  */
+/*
+ * The hand-off between one prompt and the next.
+ *
+ * The answered bar settles back and fades during the pause that was already
+ * there after a right answer; the next arrives rising into the same place. Both
+ * halves are small — six pixels and a hair of scale — because the eye is locked
+ * to this exact spot and anything larger reads as the page moving rather than
+ * the bar changing.
+ *
+ * Deliberately not a slide. A prompt is not part of a sequence you are scrolling
+ * through; it is one thing, replaced by another thing, in the same place.
+ */
 .prompt-stack {
   position: relative;
   line-height: 0;
+  animation: prompt-in 240ms var(--ease);
+}
+
+@keyframes prompt-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.985);
+  }
+}
+
+.prompt-stack--leaving {
+  opacity: 0;
+  transform: translateY(-5px) scale(0.99);
+  transition: opacity 210ms var(--ease-out), transform 210ms var(--ease-out);
 }
 
 .ghost {

@@ -54,3 +54,8 @@ adv-*.png
 session-*.png
 .bgprobe.mjs
 .tieprobe.mjs
+.motioncheck.mjs
+.motionshot.mjs
+motion-*.png
+.unlockshot.mjs
+unlock-*.png
