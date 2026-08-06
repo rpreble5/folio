@@ -53,3 +53,4 @@ adv-*.png
 .sessionshot.mjs
 session-*.png
 .bgprobe.mjs
+.tieprobe.mjs
