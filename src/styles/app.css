@@ -1615,8 +1615,8 @@ button {
 .note ellipse,
 .note path,
 .score__head {
-  transition: fill var(--dur) var(--ease), opacity var(--dur-fast) var(--ease),
-    filter var(--dur-release) var(--ease);
+  transition: fill var(--dur) var(--ease), stroke var(--dur) var(--ease),
+    opacity var(--dur-fast) var(--ease), filter var(--dur-release) var(--ease);
 }
 
 .note--active rect,
@@ -1624,7 +1624,30 @@ button {
 .note--active path,
 .score__head--active {
   filter: brightness(1.5);
-  transition: fill var(--dur) var(--ease), opacity var(--dur-fast) var(--ease), filter 0s;
+  transition: fill var(--dur) var(--ease), stroke var(--dur) var(--ease),
+    opacity var(--dur-fast) var(--ease), filter 0s;
+}
+
+/*
+ * The whole page moves through colour together.
+ *
+ * Changing a colour in the studio used to be a cut: one frame the score was
+ * blue, the next it was green. Letting it travel is worth more than the
+ * prettiness — with cascading rules and specificity, *which* notes a change
+ * actually selected is genuinely hard to see, and the ones that move are the
+ * answer.
+ *
+ * Everything the surface owns is included, because a page that fades while its
+ * staff lines snap is worse than one that cuts cleanly. Filled notes carry
+ * their colour in fill and hollow ones in stroke, so both are needed or half
+ * the themes animate and half do not.
+ */
+.score__page,
+.score__note-label,
+.score line,
+.notation path,
+.notation rect {
+  transition: fill var(--dur) var(--ease), stroke var(--dur) var(--ease);
 }
 
 .playhead--live line,

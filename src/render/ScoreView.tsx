@@ -182,7 +182,7 @@ export function ScoreView({
         ]}
       />
 
-      <rect width="100%" height="100%" fill={surface.background} />
+      <rect className="score__page" width="100%" height="100%" fill={surface.background} />
       {/* Page grain sits under everything, and wants a much coarser scale than
           the notes so it does not compete with them for the same channel. */}
       {pageFill && (

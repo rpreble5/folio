@@ -59,3 +59,5 @@ session-*.png
 motion-*.png
 .unlockshot.mjs
 unlock-*.png
+.colourprobe.mjs
+.colourcheck.mjs
