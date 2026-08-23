@@ -473,7 +473,7 @@ function SystemGroup({
           const active = activeIds.has(placed.note.id)
           return (
             <g
-              key={placed.note.id}
+              key={`${placed.note.id}:${placed.segment ?? 0}`}
               onClick={(e) => {
                 e.stopPropagation()
                 onSelectNote(placed.note.id, { x: e.clientX, y: e.clientY })
@@ -518,7 +518,9 @@ function SystemGroup({
                 trailGrain={encodings.trailGrain}
               />
               )}
-              {placed.style.labelText && (
+              {/* One label per note, on the head it begins with. A tied note's
+                  later heads are the same pitch — naming it twice is noise. */}
+              {placed.style.labelText && (placed.segment ?? 0) === 0 && (
                 <text
                   x={placed.x + Math.min(placed.height, placed.width) / 2}
                   y={labelY(placed, encodings.labelPlace, labelSize)}

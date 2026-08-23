@@ -352,10 +352,10 @@ export const PRESETS: (Theme & PresetMeta)[] = [
       // the barlines read as fainter than the staff they cross.
       lines: {
         beat: line({ show: false }),
-        bar: line({ width: 1.1, color: '#15181f' }),
+        bar: line({ width: 1.1, color: '@ink' }),
         anchor: line({ show: false }),
-        staff: line({ width: 1.1, color: '#15181f' }),
-        ledger: line({ width: 1.1, color: '#15181f' }),
+        staff: line({ width: 1.1, color: '@ink' }),
+        ledger: line({ width: 1.1, color: '@ink' }),
       },
       anchorOn: 'none' as const,
       spacing: engravedSpacing(),

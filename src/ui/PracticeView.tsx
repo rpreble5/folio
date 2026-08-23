@@ -208,6 +208,26 @@ export function PracticeView() {
     beginPrompt()
   }
 
+  /**
+   * Erase the course record: every pass, every timing, every miss.
+   *
+   * Both stores at once, because a half-reset is worse than either whole state
+   * — levels locked again but a history that still calls their bars familiar
+   * would make the first "new" run adapt to a person who supposedly never
+   * played.
+   */
+  const resetRecord = () => {
+    try {
+      localStorage.removeItem('folio.progress.v1')
+      localStorage.removeItem('folio.history.v1')
+    } catch {
+      // Private browsing. The in-memory state still resets below.
+    }
+    setProgress(loadProgress())
+    setHistory(loadHistory())
+    setJustPassed(null)
+  }
+
   const startFree = () => {
     const run = buildRun(generateDrill(config, key, seed), history, 'free', seed)
     setLevel(null)
@@ -776,6 +796,7 @@ export function PracticeView() {
             onSession={startSession}
             onPick={startLevel}
             onFree={() => setStage('free')}
+            onReset={resetRecord}
           />
         )}
       </div>
@@ -866,6 +887,7 @@ function Levels({
   onSession,
   onPick,
   onFree,
+  onReset,
 }: {
   progress: Progress
   unlocked: number
@@ -875,6 +897,7 @@ function Levels({
   onSession(): void
   onPick(level: Level): void
   onFree(): void
+  onReset(): void
 }) {
   const card = { background: surface.panel, color: surface.text }
   const done = (level: Level) => (progress.best[level.id] ?? 0) >= level.pass
@@ -1006,7 +1029,44 @@ function Levels({
           <span className="level__name">Free play</span>
         </span>
       </button>
+
+      <ResetLine muted={surface.muted} onReset={onReset} />
     </div>
+  )
+}
+
+/**
+ * Starting over, quietly.
+ *
+ * A practice record is a diary, and a diary you cannot clear is a small
+ * betrayal — but the control for it must not look like a feature. One line of
+ * muted text at the very bottom, and a second press to mean it: the first turns
+ * the line into the question, and anything else — including just waiting —
+ * turns it back. No browser dialog, which would be another app's furniture in
+ * the middle of this one.
+ */
+function ResetLine({ muted, onReset }: { muted: string; onReset(): void }) {
+  const [arming, setArming] = useState(false)
+  useEffect(() => {
+    if (!arming) return
+    const timer = window.setTimeout(() => setArming(false), 4000)
+    return () => window.clearTimeout(timer)
+  }, [arming])
+  return (
+    <button
+      className={`levels__reset${arming ? ' levels__reset--armed' : ''}`}
+      style={{ color: muted }}
+      onClick={() => {
+        if (!arming) {
+          setArming(true)
+          return
+        }
+        setArming(false)
+        onReset()
+      }}
+    >
+      {arming ? 'Erase all progress and history? Press again to confirm.' : 'Start the course over'}
+    </button>
   )
 }
 
@@ -1149,11 +1209,20 @@ function Connect({
         <button className="pill pill--accent" onClick={onCable}>
           {midi.connected ? 'Look again' : 'Connect by cable'}
         </button>
-        {bluetoothSupport().ok && (
-          <button className="pill pill--solid" onClick={onBluetooth}>
-            Bluetooth
-          </button>
-        )}
+        {/* Always present. Hiding it when unsupported left the person whose
+            browser lacks Web Bluetooth with no control and no explanation —
+            the same mistake this app has made once before with the Keyboard
+            button. Pressing it when unsupported explains instead of connecting. */}
+        <button
+          className="pill pill--solid"
+          onClick={() => {
+            const support = bluetoothSupport()
+            if (support.ok) onBluetooth()
+            else useStore.getState().showToast(support.reason ?? 'Bluetooth is unavailable here.')
+          }}
+        >
+          Bluetooth
+        </button>
         <button className="pill pill--solid" onClick={onDiagnose}>
           Diagnose
         </button>

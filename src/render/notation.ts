@@ -49,9 +49,9 @@ const STEMLESS: ReadonlySet<NoteType> = new Set<NoteType>(['breve', 'whole'])
  * stems. The inference is the same one the importer uses for MusicXML files that
  * omit <type>, so the two paths agree.
  */
-export function writtenTypeOf(note: NoteEvent): { type: NoteType; dots: number } {
-  const segment = note.notated?.segments[0]
-  if (segment) return { type: segment.type, dots: segment.dots }
+export function writtenTypeOf(note: NoteEvent, segment = 0): { type: NoteType; dots: number } {
+  const chosen = note.notated?.segments[segment] ?? note.notated?.segments[0]
+  if (chosen) return { type: chosen.type, dots: chosen.dots }
   return inferType(note.duration)
 }
 
@@ -232,10 +232,14 @@ export function clustersOf(
   for (const placed of system.notes) {
     const staff = staffOf(placed)
     const voice = placed.note.voice
-    const key = `${Math.round(placed.note.onset * 1000)}:${staff}:${voice}`
+    // The *display* beat, not the onset: the later heads of a tied note stand
+    // at their own beats, and keying on the onset would fold them back into
+    // the cluster the tie started from — one stem for three heads, bars apart.
+    const beat = placed.beat ?? placed.note.onset
+    const key = `${Math.round(beat * 1000)}:${staff}:${voice}`
     const existing = byKey.get(key)
     if (existing) existing.notes.push(placed)
-    else byKey.set(key, { notes: [placed], staff, voice, onset: placed.note.onset })
+    else byKey.set(key, { notes: [placed], staff, voice, onset: beat })
   }
 
   const clusters = Array.from(byKey.values())
@@ -285,7 +289,7 @@ export function stemForCluster(
   headWidth: number,
 ): Stem | null {
   const drawable = cluster.notes.filter((p) => {
-    const { type } = writtenTypeOf(p.note)
+    const { type } = writtenTypeOf(p.note, p.segment ?? 0)
     return !isStemless(type) && p.note.notated?.stem !== 'none'
   })
   if (drawable.length === 0) return null
@@ -324,7 +328,7 @@ export function stemForCluster(
 export function flagFor(cluster: Cluster, stem: Stem): PlacedFlag | null {
   const tails = Math.max(
     0,
-    ...cluster.notes.map((p) => tailsFor(writtenTypeOf(p.note).type)),
+    ...cluster.notes.map((p) => tailsFor(writtenTypeOf(p.note, p.segment ?? 0).type)),
   )
   if (tails === 0) return null
 
@@ -547,6 +551,9 @@ export function beamGroups(
   // independent beams, and merging them would join notes that are not a run.
   const byLane = new Map<string, Cluster[]>()
   for (const cluster of clusters) {
+    // A tie's later heads carry no beam of their own — the beam states belong
+    // to the head the note began on.
+    if (cluster.notes.some((p) => (p.segment ?? 0) > 0)) continue
     const beams = cluster.notes[0]?.note.notated?.segments[0]?.beams
     if (!beams || beams.length === 0) continue
     const lane = `${cluster.staff}:${cluster.voice}`
@@ -657,12 +664,12 @@ function buildGroup(
 
   const levels = Math.max(
     1,
-    ...run.flatMap((c) => c.notes.map((p) => tailsFor(writtenTypeOf(p.note).type))),
+    ...run.flatMap((c) => c.notes.map((p) => tailsFor(writtenTypeOf(p.note, p.segment ?? 0).type))),
   )
   const lines: BeamGroup['lines'] = []
   const step = (beamWeight + space * 0.25) * (up ? 1 : -1)
   const tailsOf = (cluster: Cluster) =>
-    Math.max(0, ...cluster.notes.map((p) => tailsFor(writtenTypeOf(p.note).type)))
+    Math.max(0, ...cluster.notes.map((p) => tailsFor(writtenTypeOf(p.note, p.segment ?? 0).type)))
 
   for (let level = 0; level < levels; level += 1) {
     const y = (x: number) => at(x, intercept) + step * level

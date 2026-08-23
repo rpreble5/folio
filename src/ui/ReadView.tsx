@@ -81,7 +81,17 @@ export function ReadView() {
   const { layout, scale } = useMemo(() => {
     const probe = layoutScore(score, theme, viewport.width)
     const rowHeight = probe.systemInnerHeight + theme.layout.systemGap
-    const wanted = viewport.height / (systemsShown * Math.max(1, rowHeight))
+    /*
+     * Fit into the height above the control bar, not the whole window.
+     *
+     * The systems used to be scaled to fill the full height, which put the
+     * last line's tail underneath the capsule — and the capsule reappears on
+     * any movement, which is precisely when someone is reading that line.
+     * Ninety-two pixels is the capsule, the hint under it, and their margins.
+     */
+    const RESERVE = 92
+    const wanted =
+      Math.max(200, viewport.height - RESERVE) / (systemsShown * Math.max(1, rowHeight))
     // Below 1 the score is being shrunk to fit, which is legitimate on a short
     // window; above about 4 the notes are so large that a system holds almost
     // nothing, and the layout width would collapse.

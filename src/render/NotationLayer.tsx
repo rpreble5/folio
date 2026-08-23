@@ -273,9 +273,12 @@ export function NotationLayer({
         const stem = notation.stems ? stemForCluster(cluster, middle, space, headWidth) : null
         if (!stem) return null
 
-        const group = groups.find((g) =>
-          g.notes.some((n) => n.note.id === cluster.notes[0].note.id),
-        )
+        // A tie's later heads never join the beam their first head is in — the
+        // id would match, but the beam lives bars away.
+        const continuation = (cluster.notes[0].segment ?? 0) > 0
+        const group = continuation
+          ? undefined
+          : groups.find((g) => g.notes.some((n) => n.note.id === cluster.notes[0].note.id))
         // A beamed chord's stem ends on its beam, not at its own length. If the
         // group overruled this chord's direction, the stem also has to move to
         // the other side of the head to stay attached.
@@ -294,7 +297,7 @@ export function NotationLayer({
 
         const colour = colorOf(cluster.notes[0])
         const flag =
-          notation.flags && !beamed.has(cluster.notes[0].note.id)
+          notation.flags && (continuation || !beamed.has(cluster.notes[0].note.id))
             ? flagFor(cluster, { x, y0, y1, up })
             : null
 
@@ -323,6 +326,9 @@ export function NotationLayer({
           const heads = layoutHeads(cluster, up, headWidth, weight)
 
           const entries = cluster.notes.flatMap((placed) => {
+            // A tie carries its accidental across: the sign is printed once, on
+            // the head the note began with, and never on the later ones.
+            if ((placed.segment ?? 0) > 0) return []
             const name = placed.note.notated?.accidental
             const glyph = name ? ACCIDENTAL_GLYPHS[ACCIDENTAL_KEYS[name] ?? ''] : undefined
             if (!glyph || !name) return []
@@ -370,11 +376,11 @@ export function NotationLayer({
       {notation.dots &&
         system.notes.map((placed) => {
           const middle = middleFor(staffOf(placed))
-          const { dots } = writtenTypeOf(placed.note)
+          const { dots } = writtenTypeOf(placed.note, placed.segment ?? 0)
           if (dots === 0) return null
           const cy = placed.y + placed.height / 2
           return (
-            <g key={`dot-${placed.note.id}`} pointerEvents="none">
+            <g key={`dot-${placed.note.id}-${placed.segment ?? 0}`} pointerEvents="none">
               {Array.from({ length: dots }, (_, i) => (
                 <GlyphMark
                   key={i}
@@ -389,7 +395,100 @@ export function NotationLayer({
             </g>
           )
         })}
+      {/* --- Ties, one curve per pair of written heads --------------------- */}
+      {notation.heads &&
+        system.notes.flatMap((placed) => {
+          const segments = placed.note.notated?.segments
+          if (!segments || segments.length < 2) return []
+          const k = placed.segment ?? 0
+          const cy = placed.y + placed.height / 2
+          /*
+           * On the notehead side, which is the side away from the stem: a note
+           * below the middle line stems up and ties below, on it or above it
+           * stems down and ties above.
+           *
+           * Except in a tied chord, where every curve on the same side collides
+           * with its neighbour — there the outer voices curve outward: the top
+           * note's tie above, the rest below, which is the shape engravers cut.
+           */
+          const beat = placed.beat ?? placed.note.onset
+          const siblings = system.notes.filter(
+            (p) =>
+              (p.beat ?? p.note.onset) === beat &&
+              (p.segment ?? 0) === k &&
+              p.note.voice === placed.note.voice &&
+              staffOf(p) === staffOf(placed) &&
+              (p.note.notated?.segments.length ?? 0) > 1,
+          )
+          const below =
+            siblings.length > 1
+              ? diatonicIndex(placed.note.spelling) !==
+                Math.max(...siblings.map((p) => diatonicIndex(p.note.spelling)))
+              : diatonicIndex(placed.note.spelling) < middleFor(staffOf(placed))
+          const colour = colorOf(placed)
+          const out: ReactNode[] = []
+
+          if (k < segments.length - 1) {
+            const next = system.notes.find(
+              (p) => p.note.id === placed.note.id && (p.segment ?? 0) === k + 1,
+            )
+            const x1 = placed.x + (placed.dx ?? 0) + placed.width * 0.92
+            // A tie into the next system has no second head to reach on this
+            // one: it runs a little way toward the margin and stops, and its
+            // other half rises out of the margin on the line below.
+            const x2 = next ? next.x + (next.dx ?? 0) + next.width * 0.08 : x1 + headWidth * 1.4
+            if (x2 > x1 + space * 0.2) {
+              out.push(
+                <path
+                  key={`tie-${placed.note.id}-${k}`}
+                  d={tiePath(x1, x2, cy, below, space)}
+                  fill={colour}
+                  pointerEvents="none"
+                />,
+              )
+            }
+          }
+          if (k > 0) {
+            const previous = system.notes.some(
+              (p) => p.note.id === placed.note.id && (p.segment ?? 0) === k - 1,
+            )
+            if (!previous) {
+              const x2 = placed.x + (placed.dx ?? 0) + placed.width * 0.08
+              out.push(
+                <path
+                  key={`tie-in-${placed.note.id}-${k}`}
+                  d={tiePath(x2 - headWidth * 1.4, x2, cy, below, space)}
+                  fill={colour}
+                  pointerEvents="none"
+                />,
+              )
+            }
+          }
+          return out
+        })}
     </g>
+  )
+}
+
+/**
+ * The lens shape of an engraved tie: two arcs sharing their endpoints, the
+ * outer bulging slightly further than the inner, filled. A stroked curve reads
+ * as a wire; the swell in the middle is what makes it read as a tie.
+ */
+function tiePath(x1: number, x2: number, cy: number, below: boolean, space: number): string {
+  const dir = below ? 1 : -1
+  const y0 = cy + dir * space * 0.58
+  const w = x2 - x1
+  // Deeper for longer ties, within reason — a tie across a whole bar at the
+  // same rise as one between neighbours would read as a straight line.
+  const h = dir * Math.min(space * 0.9, space * 0.38 + w * 0.045)
+  const t = dir * space * 0.15
+  const cx1 = x1 + w * 0.3
+  const cx2 = x1 + w * 0.7
+  return (
+    `M ${x1} ${y0}` +
+    ` C ${cx1} ${y0 + h}, ${cx2} ${y0 + h}, ${x2} ${y0}` +
+    ` C ${cx2} ${y0 + h + t}, ${cx1} ${y0 + h + t}, ${x1} ${y0} Z`
   )
 }
 
@@ -400,7 +499,7 @@ function onLine(placed: PlacedNote, middleIndex: number): boolean {
 
 /** Which authentic notehead a written value takes. */
 export function headGlyphFor(placed: PlacedNote): Glyph | undefined {
-  const { type } = writtenTypeOf(placed.note)
+  const { type } = writtenTypeOf(placed.note, placed.segment ?? 0)
   if (type === 'breve') return HEAD_GLYPHS.breve
   if (type === 'whole') return HEAD_GLYPHS.whole
   if (isHollow(type)) return HEAD_GLYPHS.half

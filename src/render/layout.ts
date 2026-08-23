@@ -23,6 +23,14 @@ const NOTE_LETTERS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', '
 
 export interface PlacedNote {
   note: NoteEvent
+  /**
+   * Which written head of the note this is. Zero — the head the note begins
+   * on — for every note except the later heads of a tie, which stand at their
+   * own beats with their own written values.
+   */
+  segment?: number
+  /** The beat this head stands at, when it is not the note's onset. */
+  beat?: number
   x: number
   /**
    * Horizontal shift for a head that crossed the stem, in pixels. Engraved mode

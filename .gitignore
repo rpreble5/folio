@@ -64,3 +64,13 @@ unlock-*.png
 .tourshot.mjs
 tour-*.png
 .readprobe.mjs
+.inkcheck.mjs
+.inkdebug.mjs
+.inkshot.mjs
+ink-dark.png
+.inkzoom.mjs
+ink-zoom-*.png
+.fixcheck.mjs
+.tiecheck.mjs
+.tieshot.mjs
+tie-demo.png

@@ -10,6 +10,7 @@
 import type { Hand, KeyMark, NoteEvent, NoteType } from './types'
 import { degreeLabel, noteName, octaveOf, pitchClass, scaleDegree, solfege } from './pitch'
 import { lightnessOf, scaleChroma, shiftLightness, withLightness } from './oklch'
+import { ANCHOR_DARK, ANCHOR_LIGHT } from './palettes'
 import {
   type ColorConfig,
   type ShapeKind,
@@ -615,7 +616,12 @@ export function makeSurface(background: string): Surface {
     panel: away(0.04),
     grid: away(0.035),
     gridStrong: away(0.11),
-    staffLine: away(dark ? 0.17 : 0.3, 0.018),
+    // The same distance on both sides. Dark pages used to get 0.17 to the
+    // light page's 0.30, which halved the staff's contrast exactly where the
+    // white-ink noteheads had just been made to work — five lines the music
+    // sits on, barely printed. Staff lines only exist in staff themes, so the
+    // rolls' grids are untouched by this.
+    staffLine: away(0.3, 0.018),
     muted: away(dark ? 0.36 : 0.42, 0.014),
     text: away(dark ? 0.66 : 0.72, 0.012),
     accent: away(dark ? 0.72 : 0.78, 0.012),
@@ -635,6 +641,16 @@ export function lineColor(
   noteColor?: string,
 ): string {
   if (line.color === '@note') return noteColor ?? surface.staffLine
+  /*
+   * '@ink' is printer's ink: black on a light page, white on a dark one.
+   *
+   * The engraved preset used to pin its staff, bar and ledger lines to the
+   * literal hex of dark ink — which is exactly right on paper and exactly
+   * invisible the moment the page goes dark, since a pinned hex has no way to
+   * hear about the page. The sentinel is the colour the preset actually meant:
+   * "the same ink as the notes", whatever the page makes that.
+   */
+  if (line.color === '@ink') return lightnessOf(surface.background) < 0.5 ? ANCHOR_LIGHT : ANCHOR_DARK
   if (line.color !== '@auto') return line.color
   switch (role) {
     case 'beat':

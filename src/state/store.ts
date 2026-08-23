@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Score } from '../core/types'
 import type { LabelKind, Rule, Selector, StyleDecl, Theme } from '../core/theme'
 import { cloneTheme, makeSurface, newRuleId } from '../core/theme'
+import { lightnessOf } from '../core/oklch'
 import { PRESETS, getPreset } from '../core/presets'
 import { LIBRARY } from '../core/library'
 import type { CvdMode } from '../render/cvd'
@@ -275,7 +276,35 @@ export const useStore = create<State>((set, get) => ({
     })),
 
   setPage: (background) =>
-    set((s) => ({ theme: { ...s.theme, surface: makeSurface(background) }, dirty: true })),
+    set((s) => {
+      /*
+       * Ink follows the page across the midline.
+       *
+       * Achromatic anchors are chosen, not derived — the engraved preset picks
+       * black ink because its page is paper. The choice goes stale at exactly
+       * one moment: when the page crosses from light to dark or back. Left
+       * alone, a dark page under the engraved preset showed near-black heads on
+       * near-black paper — invisible music. So the anchors flip with the page,
+       * and only when it actually crosses; recolouring within the same side
+       * would overwrite a deliberate choice for no legibility gain.
+       */
+      const wasDark = lightnessOf(s.theme.surface.background) < 0.5
+      const isDark = lightnessOf(background) < 0.5
+      let encodings = s.theme.encodings
+      const anchors = encodings.color?.achromatic
+      if (wasDark !== isDark && anchors?.some((a) => a !== 'none')) {
+        encodings = {
+          ...encodings,
+          color: {
+            ...encodings.color,
+            achromatic: anchors.map((a) =>
+              a === 'dark' ? 'light' : a === 'light' ? 'dark' : 'none',
+            ),
+          },
+        }
+      }
+      return { theme: { ...s.theme, surface: makeSurface(background), encodings }, dirty: true }
+    }),
 
   setLabel: (label) =>
     set((s) => ({

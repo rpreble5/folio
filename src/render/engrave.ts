@@ -39,6 +39,7 @@ import {
   HEAD_WIDTH,
   clusterUp,
   clustersOf,
+  isHollow,
   layoutHeads,
   middleIndexFor,
   stackAccidentals,
@@ -99,6 +100,25 @@ export interface EngraveInput {
   /** Vertical placement, shared with the proportional engine. */
   yFor: (axisPosition: number) => number
   axisPosition: (note: NoteEvent) => number
+}
+
+/**
+ * The beats at which a note's later written heads stand.
+ *
+ * Empty for almost every note. A tied note carries one segment per written
+ * head; the first stands at the onset and each of the rest at the running sum
+ * of the beats before it. This is the one place that arithmetic lives.
+ */
+export function segmentStarts(note: NoteEvent): { beat: number; segment: number }[] {
+  const segments = note.notated?.segments
+  if (!segments || segments.length < 2) return []
+  const out: { beat: number; segment: number }[] = []
+  let beat = note.onset
+  for (let k = 0; k < segments.length - 1; k += 1) {
+    beat += segments[k].beats
+    out.push({ beat, segment: k + 1 })
+  }
+  return out
 }
 
 /** Rounding floor for grouping onsets into columns. A thousandth of a beat. */
@@ -253,6 +273,14 @@ function buildColumns(
 
   for (const beat of notesByBeat.keys()) if (inSystem(beat)) beats.add(beat)
   for (const beat of restsByBeat.keys()) if (inSystem(beat)) beats.add(beat)
+  // The later heads of tied notes stand at their own beats and need their own
+  // room — scanned from the whole score, because a tie can cross a system
+  // boundary and its continuation belongs to a system its onset is not in.
+  for (const note of input.score.notes) {
+    for (const start of segmentStarts(note)) {
+      if (inSystem(start.beat)) beats.add(quantize(start.beat))
+    }
+  }
 
   const ordered = Array.from(beats).sort((a, b) => a - b)
   const columns: Column[] = ordered.map((beat) => {
@@ -378,7 +406,57 @@ function placeNotes(
       system.notes.push(placed)
     }
   }
+
+  /*
+   * The later heads of tied notes.
+   *
+   * A tie is one sound written as several heads, and until now only the first
+   * of them was drawn — a half tied over the barline into a quarter appeared as
+   * a bare half, and the bar it tied into was short of its ink. Each later
+   * segment stands at its own column, wears its own written value, and belongs
+   * to whichever system its beat falls in, which is how a tie crosses a line
+   * break without either half going missing.
+   *
+   * Scanned from the whole score rather than from this system's notes for
+   * exactly that reason: the onset may be lines away.
+   */
+  for (const note of score.notes) {
+    const starts = segmentStarts(note)
+    if (starts.length === 0) continue
+    const key = keyAt(score, note.onset)
+    const base = resolveStyle(note, theme, key)
+    for (const start of starts) {
+      if (start.beat < system.startBeat - EPSILON || start.beat >= system.endBeat - EPSILON) {
+        continue
+      }
+      const column = columns.find((c) => Math.abs(c.beat - start.beat) < EPSILON)
+      if (!column) continue
+      const segment = note.notated!.segments[start.segment]
+      const height = noteHeight * base.scale
+      system.notes.push({
+        note,
+        segment: start.segment,
+        beat: start.beat,
+        x: column.x,
+        width: headWidth,
+        y: yFor(axisPosition(note)) - height / 2 + noteHeight / 2,
+        height,
+        /*
+         * Hollowness is per written head, not per note: a half tied into a
+         * quarter is hollow then solid. Only when hollowness is *encoding* the
+         * written value, though — a theme outlining, say, the accidentals has
+         * said hollow means something else, and each head keeps that meaning.
+         */
+        style:
+          theme.encodings.outlineWhat === 'writtenLong'
+            ? { ...base, filled: !isHollow(segment.type) }
+            : base,
+        black: isBlackKey(note.midi),
+      })
+    }
+  }
 }
+
 
 /**
  * Resolve seconds within every chord, writing the offset onto each placed note.

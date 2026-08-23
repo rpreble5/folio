@@ -754,7 +754,7 @@ button {
 .read__bar {
   position: absolute;
   left: 50%;
-  bottom: 26px;
+  bottom: 32px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -772,9 +772,10 @@ button {
 .read__hint {
   position: absolute;
   left: 50%;
-  bottom: 8px;
+  bottom: 10px;
   transform: translateX(-50%);
   font-size: 10.5px;
+  line-height: 1.3;
   letter-spacing: 0.04em;
   opacity: 0.5;
   transition: opacity var(--dur) var(--ease);
@@ -2381,9 +2382,18 @@ body {
   margin-bottom: env(safe-area-inset-bottom);
 }
 
-.read__hint,
+/*
+ * The practice hint sits in flow, so padding is genuinely its spacing. The
+ * read hint is absolutely anchored — giving it padding as well as a bottom
+ * offset double-counted the inset and pushed the text 26px up into the bar,
+ * which is exactly where it rendered: through the capsule's own labels.
+ */
 .practice__hint {
   padding-bottom: max(26px, calc(env(safe-area-inset-bottom) + 12px));
+}
+
+.read__hint {
+  bottom: max(10px, env(safe-area-inset-bottom));
 }
 
 .practice__top {
@@ -2583,6 +2593,24 @@ body {
   flex-shrink: 0;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+/* The quiet way out. Text, not a card — it must never compete with the course. */
+.levels__reset {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.levels__reset:hover {
+  opacity: 0.9;
+}
+
+.levels__reset--armed {
+  opacity: 1;
+  font-weight: 550;
 }
 
 .practice__verdict {
