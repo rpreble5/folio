@@ -2595,8 +2595,70 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* The quiet way out. Text, not a card — it must never compete with the course. */
-.levels__reset {
+/* The list's footnotes: the record, and the way to start over. One row, so two
+   lines of small print do not spend the height a level card needs. */
+.levels__footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+}
+
+.levels__dot {
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+/*
+ * The record page: sentences, ranged left and right like a ledger.
+ */
+.record {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+  width: min(400px, 100%);
+}
+
+.record__group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.record__title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0 0 3px;
+}
+
+.record__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.record__row i {
+  font-style: normal;
+}
+
+.record__wean {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.record .pill {
+  align-self: center;
+  margin-top: 4px;
+}
+
+/* The quiet ways out. Text, not cards — they must never compete with the course. */
+.levels__reset,
+.levels__link {
   margin-top: 2px;
   font-size: 11px;
   letter-spacing: 0.02em;
@@ -2604,7 +2666,8 @@ body {
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-.levels__reset:hover {
+.levels__reset:hover,
+.levels__link:hover {
   opacity: 0.9;
 }
 

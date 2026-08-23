@@ -34,7 +34,8 @@ import {
 } from '../practice/drills'
 import { buildRun, type Scored } from '../practice/adapt'
 import { buildSession, canPlanSession } from '../practice/plan'
-import { loadHistory, record, slowestNotes, type History } from '../practice/history'
+import { commonSlips, mostMissed, slowestNotes, type History } from '../practice/history'
+import { weanRules, withWeaning } from '../practice/weaning'
 import { LEVELS, LEVEL_GROUPS, type Level, type LevelGroup } from '../practice/levels'
 import {
   isPassed,
@@ -71,7 +72,7 @@ const SETTLE_MS = 260
  */
 const STUCK_MS = 4000
 
-type Stage = 'menu' | 'free' | 'running' | 'summary'
+type Stage = 'menu' | 'free' | 'running' | 'summary' | 'record'
 
 export function PracticeView() {
   const theme = useStore((s) => s.theme)
@@ -98,7 +99,9 @@ export function PracticeView() {
   const [demoBeat, setDemoBeat] = useState<number | null>(null)
   const [doctor, setDoctor] = useState(false)
   const [progress, setProgress] = useState<Progress>(() => loadProgress())
-  const [history, setHistory] = useState<History>(() => loadHistory())
+  const history = useStore((s) => s.history)
+  const recordReading = useStore((s) => s.recordReading)
+  const clearPracticeHistory = useStore((s) => s.clearPracticeHistory)
   /**
    * Which prompts of the run count toward the pass mark.
    *
@@ -163,6 +166,7 @@ export function PracticeView() {
   const heldRef = useRef(new Set<number>())
   const stepRef = useRef(0)
   const wrongRef = useRef(0)
+  const slipsRef = useRef<{ staff: number; asked: number; played: number }[]>([])
   const shownAt = useRef(0)
   const settling = useRef(false)
   // Read inside the note handler, which is registered once per prompt and must
@@ -184,6 +188,7 @@ export function PracticeView() {
     heldRef.current = new Set()
     stepRef.current = 0
     wrongRef.current = 0
+    slipsRef.current = []
     shownAt.current = performance.now()
     settling.current = false
     setStep(0)
@@ -219,12 +224,11 @@ export function PracticeView() {
   const resetRecord = () => {
     try {
       localStorage.removeItem('folio.progress.v1')
-      localStorage.removeItem('folio.history.v1')
     } catch {
       // Private browsing. The in-memory state still resets below.
     }
+    clearPracticeHistory()
     setProgress(loadProgress())
-    setHistory(loadHistory())
     setJustPassed(null)
   }
 
@@ -313,6 +317,20 @@ export function PracticeView() {
         // fingers land untidily and punishing that teaches nothing.
         if (previous.includes(note)) return
         wrongRef.current += 1
+        /*
+         * Which note was this aimed at? The nearest one of the current step, by
+         * pitch — for a single note there is nothing to decide, and for a chord
+         * a slip lands closest to the note the finger meant. The pair is what
+         * turns "three wrong notes" into "E4 keeps coming out as G4".
+         */
+        const asked = current.reduce((a, b) =>
+          Math.abs(b - note) < Math.abs(a - note) ? b : a,
+        )
+        slipsRef.current.push({
+          staff: prompt.score.notes.find((n) => n.midi === asked)?.hand === 'left' ? 2 : 1,
+          asked,
+          played: note,
+        })
         setFlash('wrong')
         setLastWrong(note)
         // The prompt stays. Getting it wrong is information, not a failure, and
@@ -364,15 +382,14 @@ export function PracticeView() {
       ])
       // Written down rather than summarised and forgotten. This is the whole
       // of what the next run has to go on.
-      setHistory((h) =>
-        record(h, {
-          levelId: level?.id ?? 'free',
-          promptId: prompt.id,
-          notes: notesOf(prompt),
-          ms,
-          wrong: wrongRef.current,
-        }),
-      )
+      recordReading({
+        levelId: level?.id ?? 'free',
+        promptId: prompt.id,
+        notes: notesOf(prompt),
+        ms,
+        wrong: wrongRef.current,
+        slips: slipsRef.current,
+      })
       window.setTimeout(() => {
         setIndex((i) => i + 1)
         beginPrompt()
@@ -531,6 +548,7 @@ export function PracticeView() {
    * the room it needs rather than stretching to the page; and one bar per line so
    * nothing can arrive beside it.
    */
+  const weaned = useMemo(() => withWeaning(theme, history), [theme, history])
   const bars = prompt ? barsIn(prompt) : 1
   /*
    * How many bars share a line.
@@ -546,14 +564,14 @@ export function PracticeView() {
   const promptTheme = useMemo(() => {
     // Long material needs a smaller staff, or two bars of a scale will not fit
     // across a phone held in portrait.
-    const laneHeight = Math.max(theme.layout.laneHeight, bars > 1 ? 10 : 13)
+    const laneHeight = Math.max(weaned.layout.laneHeight, bars > 1 ? 10 : 13)
     // Spacing's unit is in pixels rather than staff spaces, so enlarging the
     // staff without enlarging it too would keep the old gaps and read as cramped.
-    const grew = laneHeight / Math.max(1, theme.layout.laneHeight)
+    const grew = laneHeight / Math.max(1, weaned.layout.laneHeight)
     return {
-      ...theme,
+      ...weaned,
       layout: {
-        ...theme.layout,
+        ...weaned.layout,
         laneHeight,
         barsPerSystem,
         showMeasureNumbers: false,
@@ -778,6 +796,14 @@ export function PracticeView() {
               )}
             </div>
           </div>
+        ) : stage === 'record' ? (
+          <RecordPanel
+            history={history}
+            keyMark={key}
+            surface={theme.surface}
+            weaning={theme.encodings.labelWean ?? false}
+            onBack={() => setStage('menu')}
+          />
         ) : stage === 'free' ? (
           <FreePlay
             config={config}
@@ -796,6 +822,7 @@ export function PracticeView() {
             onSession={startSession}
             onPick={startLevel}
             onFree={() => setStage('free')}
+            onRecord={() => setStage('record')}
             onReset={resetRecord}
           />
         )}
@@ -887,6 +914,7 @@ function Levels({
   onSession,
   onPick,
   onFree,
+  onRecord,
   onReset,
 }: {
   progress: Progress
@@ -897,6 +925,7 @@ function Levels({
   onSession(): void
   onPick(level: Level): void
   onFree(): void
+  onRecord(): void
   onReset(): void
 }) {
   const card = { background: surface.panel, color: surface.text }
@@ -1030,7 +1059,129 @@ function Levels({
         </span>
       </button>
 
-      <ResetLine muted={surface.muted} onReset={onReset} />
+      {/* One quiet row: the way into the record, and the way out of it all.
+          A row rather than a stack because the list already runs the height of
+          a phone, and these are footnotes, not cards. */}
+      <div className="levels__footer">
+        <button className="levels__link" style={{ color: surface.muted }} onClick={onRecord}>
+          Your reading record
+        </button>
+        <span className="levels__dot" style={{ color: surface.muted }}>
+          ·
+        </span>
+        <ResetLine muted={surface.muted} onReset={onReset} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The record: what the practice history actually says, in sentences.
+ *
+ * Everything on this page is already known — it is the same ledger that drives
+ * the extra turns, the session's review and the label weaning. Showing it is
+ * what turns "the app adapts" from something taken on faith into something a
+ * person can check, and the slips section is the start of the confusion
+ * matrix: not that E4 keeps going wrong, but what it keeps coming out as.
+ */
+function RecordPanel({
+  history,
+  keyMark,
+  surface,
+  weaning,
+  onBack,
+}: {
+  history: History
+  keyMark: ReturnType<typeof keyAt>
+  surface: Theme['surface']
+  weaning: boolean
+  onBack(): void
+}) {
+  const slow = slowestNotes(history, 5).filter((s) => s.ms > 0)
+  const missed = mostMissed(history, 5)
+  const slips = commonSlips(history, 5)
+  const wean = weaning ? weanRules(history) : null
+  const name = (midi: number) => noteName(spellPitch(midi, keyMark), true)
+  const staffName = (staff: number) => (staff === 2 ? 'bass' : 'treble')
+  const empty = slow.length === 0 && missed.length === 0 && slips.length === 0
+
+  return (
+    <div className="record" style={{ color: surface.text }}>
+      {empty ? (
+        <p className="practice__note" style={{ color: surface.muted }}>
+          Play a few levels and this page starts filling in — which notes are
+          slow, which go wrong, and what they come out as instead.
+        </p>
+      ) : (
+        <>
+          {slow.length > 0 && (
+            <section className="record__group">
+              <h3 className="record__title" style={{ color: surface.muted }}>
+                Slowest to read
+              </h3>
+              {slow.map((s) => (
+                <div className="record__row" key={`s-${s.staff}-${s.midi}`}>
+                  <span>
+                    {name(s.midi)}
+                    <i style={{ color: surface.muted }}> · {staffName(s.staff)}</i>
+                  </span>
+                  <span style={{ color: surface.muted }}>{(s.ms / 1000).toFixed(1)}s</span>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {missed.length > 0 && (
+            <section className="record__group">
+              <h3 className="record__title" style={{ color: surface.muted }}>
+                Most often wrong
+              </h3>
+              {missed.map((m) => (
+                <div className="record__row" key={`m-${m.staff}-${m.midi}`}>
+                  <span>
+                    {name(m.midi)}
+                    <i style={{ color: surface.muted }}> · {staffName(m.staff)}</i>
+                  </span>
+                  <span style={{ color: surface.muted }}>
+                    {Math.round(m.rate * 100)}% of {m.seen}
+                  </span>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {slips.length > 0 && (
+            <section className="record__group">
+              <h3 className="record__title" style={{ color: surface.muted }}>
+                What they come out as
+              </h3>
+              {slips.map((s) => (
+                <div className="record__row" key={`p-${s.staff}-${s.asked}-${s.played}`}>
+                  <span>
+                    {name(s.asked)} <i style={{ color: surface.muted }}>played as</i>{' '}
+                    {name(s.played)}
+                  </span>
+                  <span style={{ color: surface.muted }}>×{s.times}</span>
+                </div>
+              ))}
+            </section>
+          )}
+
+          {wean && (wean.faded > 0 || wean.weaned > 0) && (
+            <p className="record__wean" style={{ color: surface.muted }}>
+              {wean.weaned > 0 &&
+                `${wean.weaned} ${wean.weaned === 1 ? 'letter' : 'letters'} gone`}
+              {wean.weaned > 0 && wean.faded > 0 && ' · '}
+              {wean.faded > 0 && `${wean.faded} fading`}
+              {' — read fluently, so the labels are stepping back.'}
+            </p>
+          )}
+        </>
+      )}
+
+      <button className="pill pill--solid" onClick={onBack}>
+        Back
+      </button>
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { LIBRARY } from './core/library'
 import { ACCEPTED_TYPES, importFile } from './io/import'
 import { beatToSeconds, secondsToBeat } from './core/types'
 import { layoutScore } from './render/layout'
+import { withWeaning } from './practice/weaning'
 import { ScoreView } from './render/ScoreView'
 import { Library } from './ui/Library'
 import { StudioPanel } from './ui/StudioPanel'
@@ -23,7 +24,14 @@ const EDGE = 14
 export default function App() {
   const screen = useStore((s) => s.screen)
   const score = useStore((s) => s.score)
-  const theme = useStore((s) => s.theme)
+  const authored = useStore((s) => s.theme)
+  const history = useStore((s) => s.history)
+  /*
+   * The rendered score wears the weaned theme; the studio edits the authored
+   * one. Weaning is observed from the practice record, never written into the
+   * style itself, so saving or sharing a style never bakes today's fluency in.
+   */
+  const theme = useMemo(() => withWeaning(authored, history), [authored, history])
   const playing = useStore((s) => s.playing)
   const midi = useStore((s) => s.midi)
   const playheadBeat = useStore((s) => s.playheadBeat)

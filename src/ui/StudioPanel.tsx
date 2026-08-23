@@ -958,6 +958,25 @@ function LabelsTab() {
             onChange={(labelCase) => patchEncodings({ labelCase })}
           />
         </Field>
+        <Field name="Weaning">
+          <Pills
+            fill
+            options={[
+              { value: 'off', label: 'Keep them' },
+              { value: 'on', label: 'Wean off' },
+            ]}
+            value={encodings.labelWean ? 'on' : 'off'}
+            onChange={(v) => patchEncodings({ labelWean: v === 'on' })}
+          />
+        </Field>
+        {encodings.labelWean && (
+          <p className="note-text">
+            Letters fade on the notes your practice record shows you read quickly
+            and cleanly, then disappear — and come back if a note starts going
+            wrong or has not been seen for a fortnight. The record lives on this
+            device only.
+          </p>
+        )}
       </Group>
 
       <Group label="Colour">

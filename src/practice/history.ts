@@ -53,9 +53,22 @@ export interface Stat {
 export interface History {
   notes: Record<string, Stat>
   items: Record<string, Stat>
+  /**
+   * What was played when it went wrong, keyed "staff:asked>played".
+   *
+   * The seed of the confusion matrix: not just *that* E4 keeps going wrong,
+   * but that it keeps coming out as G4 — which is a different problem from it
+   * coming out as E5, and wants different practice. Counted rather than
+   * averaged, because a slip is an event, not a measurement.
+   */
+  slips?: Record<string, number>
 }
 
 const EMPTY: History = { notes: {}, items: {} }
+
+/** A slip's identity: the staff it was read on, what was asked, what came out. */
+export const slipKey = (staff: number, asked: number, played: number): string =>
+  `${staff}:${asked}>${played}`
 
 /** Whole days since the epoch. Coarse on purpose — practice is a daily habit. */
 export const today = (): number => Math.floor(Date.now() / 86_400_000)
@@ -100,10 +113,11 @@ export function loadHistory(): History {
     if (!raw) return EMPTY
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return EMPTY
-    const { notes, items } = parsed as History
+    const { notes, items, slips } = parsed as History
     return {
       notes: notes && typeof notes === 'object' ? notes : {},
       items: items && typeof items === 'object' ? items : {},
+      slips: slips && typeof slips === 'object' ? slips : {},
     }
   } catch {
     // A corrupt record should cost someone their statistics, not the app.
@@ -127,6 +141,8 @@ export interface Reading {
   ms: number
   /** Wrong notes played before it came out right. */
   wrong: number
+  /** Each wrong press, paired with the note it was most plausibly aimed at. */
+  slips?: { staff: number; asked: number; played: number }[]
 }
 
 /**
@@ -150,9 +166,61 @@ export function record(history: History, reading: Reading): History {
   const key = itemKey(reading.levelId, reading.promptId)
   items[key] = fold(items[key], reading.ms, missed, day)
 
-  const next: History = { notes: trim(notes), items: trim(items) }
+  const slips = { ...(history.slips ?? {}) }
+  for (const slip of reading.slips ?? []) {
+    const k = slipKey(slip.staff, slip.asked, slip.played)
+    slips[k] = (slips[k] ?? 0) + 1
+  }
+  // Bounded like the ledgers, but by weight: the rarest slips fall off first,
+  // because a slip seen once two months ago is noise and one seen nine times
+  // is the finding.
+  const slipKeys = Object.keys(slips)
+  const trimmedSlips =
+    slipKeys.length <= LIMIT
+      ? slips
+      : Object.fromEntries(
+          slipKeys.sort((a, b) => slips[b] - slips[a]).slice(0, LIMIT).map((k) => [k, slips[k]]),
+        )
+
+  const next: History = { notes: trim(notes), items: trim(items), slips: trimmedSlips }
   saveHistory(next)
   return next
+}
+
+/** The most frequent slips, worst first. For the record screen. */
+export function commonSlips(
+  history: History,
+  count: number,
+): { staff: number; asked: number; played: number; times: number }[] {
+  return Object.entries(history.slips ?? {})
+    .map(([key, times]) => {
+      const [staff, rest] = key.split(':')
+      const [asked, played] = rest.split('>')
+      return { staff: Number(staff), asked: Number(asked), played: Number(played), times }
+    })
+    .filter((s) => s.times >= 2)
+    .sort((a, b) => b.times - a.times)
+    .slice(0, count)
+}
+
+/** Notes missed most often, worst first, with enough evidence to say so. */
+export function mostMissed(
+  history: History,
+  count: number,
+): { staff: number; midi: number; rate: number; seen: number }[] {
+  return Object.entries(history.notes)
+    .map(([key, stat]) => {
+      const [staff, midi] = key.split(':')
+      return {
+        staff: Number(staff),
+        midi: Number(midi),
+        rate: stat.missed / Math.max(1, stat.seen),
+        seen: stat.seen,
+      }
+    })
+    .filter((s) => s.seen >= 3 && s.rate > 0.15)
+    .sort((a, b) => b.rate - a.rate)
+    .slice(0, count)
 }
 
 /**
@@ -216,11 +284,18 @@ export function weighPrompt(
   return Math.max(...notes.map((n) => weigh(history.notes[noteKey(n.staff, n.midi)], day)))
 }
 
-/** The slowest notes on record, worst first. For the summary. */
-export function slowestNotes(history: History, count: number): { midi: number; ms: number }[] {
+/** The slowest notes on record, worst first. For the summary and the record. */
+export function slowestNotes(
+  history: History,
+  count: number,
+): { staff: number; midi: number; ms: number }[] {
   return Object.entries(history.notes)
     .filter(([, stat]) => stat.seen >= 2)
-    .map(([key, stat]) => ({ midi: Number(key.split(':')[1]), ms: stat.ms }))
+    .map(([key, stat]) => ({
+      staff: Number(key.split(':')[0]),
+      midi: Number(key.split(':')[1]),
+      ms: stat.ms,
+    }))
     .sort((a, b) => b.ms - a.ms)
     .slice(0, count)
 }

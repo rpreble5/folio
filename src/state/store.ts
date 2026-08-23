@@ -8,6 +8,7 @@ import { LIBRARY } from '../core/library'
 import type { CvdMode } from '../render/cvd'
 import type { MidiDevice } from '../io/midi'
 import { createSession } from '../practice/session'
+import { loadHistory, record, type History, type Reading } from '../practice/history'
 
 // v2: colour became a {source, order, tone, rotate} config and the chromatic
 // ring became the outline channel, so v1 themes no longer load.
@@ -118,6 +119,13 @@ interface State {
   playheadBeat: number
   tempoScale: number
 
+  /**
+   * The practice record, held here rather than in the practice view because
+   * label weaning reads it everywhere a label is drawn — the score screen and
+   * the reading view included, which is where the labels actually live.
+   */
+  history: History
+
   importError: string | null
   toast: string | null
 
@@ -156,6 +164,10 @@ interface State {
   setPlaying: (playing: boolean) => void
   setPlayhead: (beat: number) => void
   setTempoScale: (scale: number) => void
+
+  /** Fold one answered prompt into the practice record. */
+  recordReading: (reading: Reading) => void
+  clearPracticeHistory: () => void
 
   saveCurrentTheme: (name: string) => void
   deleteCustomTheme: (id: string) => void
@@ -234,6 +246,8 @@ export const useStore = create<State>((set, get) => ({
   playing: false,
   playheadBeat: 0,
   tempoScale: 1,
+
+  history: loadHistory(),
 
   importError: null,
   toast: null,
@@ -349,6 +363,16 @@ export const useStore = create<State>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
   setPlayhead: (playheadBeat) => set({ playheadBeat }),
   setTempoScale: (tempoScale) => set({ tempoScale }),
+
+  recordReading: (reading) => set((s) => ({ history: record(s.history, reading) })),
+  clearPracticeHistory: () => {
+    try {
+      localStorage.removeItem('folio.history.v1')
+    } catch {
+      // Private browsing. The in-memory record still clears.
+    }
+    set({ history: { notes: {}, items: {} } })
+  },
 
   saveCurrentTheme: (name) => {
     const { theme, customThemes } = get()

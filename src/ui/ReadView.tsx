@@ -28,6 +28,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { session, useStore } from '../state/store'
 import { exitFullscreen, keepAwake } from './screen'
 import { layoutScore } from '../render/layout'
+import { withWeaning } from '../practice/weaning'
 import { ScoreView } from '../render/ScoreView'
 import { player } from '../audio/player'
 import { beatsPerMeasure, timeSignatureAt } from '../core/types'
@@ -41,7 +42,10 @@ const IDLE_MS = 2600
 
 export function ReadView() {
   const score = useStore((s) => s.score)
-  const theme = useStore((s) => s.theme)
+  const authored = useStore((s) => s.theme)
+  const history = useStore((s) => s.history)
+  // The reading view is where the labels live, so it is where weaning shows.
+  const theme = useMemo(() => withWeaning(authored, history), [authored, history])
   const playing = useStore((s) => s.playing)
   const playheadBeat = useStore((s) => s.playheadBeat)
   const cvd = useStore((s) => s.cvd)

@@ -103,6 +103,8 @@ export interface StyleDecl {
   shape?: ShapeKind
   label?: LabelKind
   labelColor?: string
+  /** Multiplier on the label's opacity alone — how weaning fades a letter. */
+  labelOpacity?: number
   opacity?: number
   /** Multiplier on the note's drawn size. */
   scale?: number
@@ -124,6 +126,8 @@ export interface ResolvedStyle {
   shape: ShapeKind
   labelText: string
   labelColor: string
+  /** 1 for a full label; weaning turns this down before it removes the text. */
+  labelOpacity: number
   opacity: number
   scale: number
   /** False draws the note hollow, with its colour moved to the outline. */
@@ -552,6 +556,16 @@ export interface Encodings {
   color: ColorConfig
   shapeSet: string
   label: LabelKind
+  /**
+   * Fade the labels on notes the practice record shows are read fluently.
+   *
+   * The whole reason labels exist here is to be learnt from and then left
+   * behind, and this is the leaving: read a note quickly and cleanly often
+   * enough and its letter recedes, then goes; miss it or stay away a fortnight
+   * and the letter comes back. Off by default — silently removing labels from
+   * someone who did not ask is not weaning, it is vandalism.
+   */
+  labelWean?: boolean
   labelScale: number
   /** Louder notes render slightly larger. */
   sizeByVelocity: boolean
@@ -841,6 +855,7 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
       theme.surface,
       onColorFor(palette, note, key),
     ),
+    labelOpacity: 1,
     opacity: 1,
     scale: theme.encodings.sizeByVelocity ? 0.82 + note.velocity * 0.28 : 1,
     filled: !outlined,
@@ -872,6 +887,7 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
     if (s.shape !== undefined) base.shape = s.shape
     if (s.label !== undefined) base.labelText = labelFor(s.label, note, key)
     if (s.labelColor !== undefined) base.labelColor = s.labelColor
+    if (s.labelOpacity !== undefined) base.labelOpacity = s.labelOpacity
     if (s.opacity !== undefined) base.opacity = s.opacity
     if (s.scale !== undefined) base.scale = s.scale
     if (s.filled !== undefined) {

@@ -528,7 +528,7 @@ function SystemGroup({
                   // already knows whether the page or the note is behind the
                   // text, so a tinted label survives being moved outside.
                   fill={placed.style.labelColor}
-                  fillOpacity={encodings.labelOpacity}
+                  fillOpacity={encodings.labelOpacity * placed.style.labelOpacity}
                   fontSize={labelSize}
                   fontWeight={encodings.labelWeight}
                   style={{ fontFamily: fontStack(encodings.labelFont) }}
