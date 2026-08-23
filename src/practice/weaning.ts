@@ -65,9 +65,10 @@ export function withWeaning(theme: Theme, history: History): Theme {
   return { ...theme, rules: [...rules, ...theme.rules] }
 }
 
-type Grade = 'full' | 'faded' | 'weaned'
+export type Grade = 'full' | 'faded' | 'weaned'
 
-function gradeOf(stat: Stat, day: number): Grade {
+/** Exported for the fluency map, which paints keys by the same judgement. */
+export function gradeOf(stat: Stat, day: number): Grade {
   if (day - stat.day > FRESH_DAYS) return 'full'
   const missRate = stat.missed / Math.max(1, stat.seen)
   if (missRate > MISS_CEILING || stat.ms > FLUENT_MS) return 'full'

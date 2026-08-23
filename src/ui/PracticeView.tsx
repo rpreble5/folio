@@ -33,6 +33,7 @@ import {
   type Prompt,
 } from '../practice/drills'
 import { buildRun, type Scored } from '../practice/adapt'
+import { flowPhrase, seedDial, updateDial, stairLabel, type Dial } from '../practice/flow'
 import { buildSession, canPlanSession } from '../practice/plan'
 import { commonSlips, mostMissed, slowestNotes, type History } from '../practice/history'
 import { weanRules, withWeaning } from '../practice/weaning'
@@ -48,6 +49,7 @@ import { loadTempo, saveTempo, stepTempo, TEMPI } from '../practice/settings'
 import { midiSupport } from '../io/midi'
 import { bluetoothSupport } from '../io/blemidi'
 import { MidiDoctor } from './MidiDoctor'
+import { KeyboardMap } from './KeyboardMap'
 import { GhostNote } from './GhostNote'
 import { Field, Group, Pills, Range } from './controls'
 import type { Theme } from '../core/theme'
@@ -72,7 +74,7 @@ const SETTLE_MS = 260
  */
 const STUCK_MS = 4000
 
-type Stage = 'menu' | 'free' | 'running' | 'summary' | 'record'
+type Stage = 'menu' | 'free' | 'running' | 'summary' | 'record' | 'flowdone'
 
 export function PracticeView() {
   const theme = useStore((s) => s.theme)
@@ -136,6 +138,23 @@ export function PracticeView() {
    * a session ending in a scale played the answer for its reading warm-up.
    */
   const [demos, setDemos] = useState<boolean[]>([])
+  /**
+   * The stair flow is currently drawing music from, or null outside flow.
+   *
+   * State because the header names it; everything else about a flow session
+   * lives in a ref, because it changes on every played note and nothing
+   * renders it until the goodbye card.
+   */
+  const [flowStair, setFlowStair] = useState<number | null>(null)
+  const flowRef = useRef<{
+    dial: Dial
+    events: number
+    clean: number
+    wrong: number
+    startedAt: number
+    /** Index of the phrase being read, which also seeds the next one. */
+    n: number
+  } | null>(null)
   const [bpm, setBpm] = useState<number>(() => loadTempo())
   /**
    * Bumped to play the prompt through again.
@@ -168,6 +187,12 @@ export function PracticeView() {
   const wrongRef = useRef(0)
   const slipsRef = useRef<{ staff: number; asked: number; played: number }[]>([])
   const shownAt = useRef(0)
+  // Flow measures each *event*, not each prompt: the clock restarts on every
+  // completed step, and the wrong-press and slip counters remember where the
+  // previous event left them so each event owns only its own mistakes.
+  const eventAt = useRef(0)
+  const eventWrong = useRef(0)
+  const eventSlips = useRef(0)
   const settling = useRef(false)
   // Read inside the note handler, which is registered once per prompt and must
   // not close over a stale value.
@@ -190,6 +215,9 @@ export function PracticeView() {
     wrongRef.current = 0
     slipsRef.current = []
     shownAt.current = performance.now()
+    eventAt.current = shownAt.current
+    eventWrong.current = 0
+    eventSlips.current = 0
     settling.current = false
     setStep(0)
     setFlash('none')
@@ -197,7 +225,37 @@ export function PracticeView() {
     setStuck(false)
   }, [])
 
+  /** Leave flow behind entirely — its dial must not steer a level run. */
+  const endFlow = useCallback(() => {
+    flowRef.current = null
+    setFlowStair(null)
+  }, [])
+
+  /**
+   * Begin flowing: seed the dial from the record, draw the first phrase.
+   *
+   * The dial seeds from history rather than from zero, so a returning reader
+   * starts where their reading actually is — and everything read here is
+   * written back to the same record, so flow and the levels teach each other.
+   */
+  const startFlow = () => {
+    void player.unlock()
+    const dial = seedDial(history, key)
+    flowRef.current = { dial, events: 0, clean: 0, wrong: 0, startedAt: performance.now(), n: 0 }
+    setFlowStair(dial.stair)
+    setLevel(null)
+    setPrompts([flowPhrase(dial.stair, key, seed * 7919, 0)])
+    setScored({ from: 0, to: 0 })
+    setLabels([])
+    setDemos([])
+    setAttempts([])
+    setIndex(0)
+    setStage('running')
+    beginPrompt()
+  }
+
   const startLevel = (next: Level) => {
+    endFlow()
     // The click that got here is the gesture a browser wants before it will
     // make a sound, and a demo that arrives silently is worse than none.
     void player.unlock()
@@ -233,6 +291,7 @@ export function PracticeView() {
   }
 
   const startFree = () => {
+    endFlow()
     const run = buildRun(generateDrill(config, key, seed), history, 'free', seed)
     setLevel(null)
     setPrompts(run.prompts)
@@ -253,6 +312,7 @@ export function PracticeView() {
    * to arrive at it, not a different currency.
    */
   const startSession = () => {
+    endFlow()
     void player.unlock()
     const session = buildSession(key, seed, history, progress)
     setLevel(session.level)
@@ -361,6 +421,35 @@ export function PracticeView() {
       setLastWrong(null)
       setStuck(false)
 
+      /*
+       * Flow reads the meter here, at every completed event, not at the end
+       * of the phrase: the dial that decides what the next phrase is made of
+       * wants per-note evidence, and the record wants per-note times — a
+       * phrase's total credited to all eight of its notes calls every one of
+       * them slow. Each event is also written straight into the history, so
+       * the weaning and the fluency map learn from flow at the grain flow
+       * actually measures.
+       */
+      const flow = flowRef.current
+      if (flow) {
+        const now = performance.now()
+        const ms = Math.round(now - eventAt.current)
+        eventAt.current = now
+        const wrongs = wrongRef.current - eventWrong.current
+        eventWrong.current = wrongRef.current
+        const slips = slipsRef.current.slice(eventSlips.current)
+        eventSlips.current = slipsRef.current.length
+        const notes = prompt.score.notes
+          .filter((n) => n.id.startsWith(`${prompt.id}-${next - 1}-`))
+          .map((n) => ({ staff: n.hand === 'left' ? 2 : 1, midi: n.midi }))
+        recordReading({ levelId: 'flow', promptId: 'stream', notes, ms, wrong: wrongs, slips })
+        flow.dial = updateDial(flow.dial, { ms, wrong: wrongs })
+        flow.events += 1
+        flow.wrong += wrongs
+        if (wrongs === 0) flow.clean += 1
+        setFlowStair(flow.dial.stair)
+      }
+
       if (next < steps.length) {
         // Held notes are not cleared: playing a phrase legato is correct, and
         // the next step is judged on its own notes being down, not on the
@@ -375,29 +464,44 @@ export function PracticeView() {
       // the music stays put and readable while it fades, which is why the
       // travel is a few pixels rather than a slide.
       setLeaving(true)
-      const ms = Math.round(performance.now() - shownAt.current)
-      setAttempts((list) => [
-        ...list,
-        { promptId: prompt.id, pitches: pitchesOf(prompt), ms, wrong: wrongRef.current },
-      ])
-      // Written down rather than summarised and forgotten. This is the whole
-      // of what the next run has to go on.
-      recordReading({
-        levelId: level?.id ?? 'free',
-        promptId: prompt.id,
-        notes: notesOf(prompt),
-        ms,
-        wrong: wrongRef.current,
-        slips: slipsRef.current,
-      })
+      // Flow has already written each event down as it happened; recording
+      // the phrase again would count every note twice.
+      if (!flowRef.current) {
+        const ms = Math.round(performance.now() - shownAt.current)
+        setAttempts((list) => [
+          ...list,
+          { promptId: prompt.id, pitches: pitchesOf(prompt), ms, wrong: wrongRef.current },
+        ])
+        // Written down rather than summarised and forgotten. This is the whole
+        // of what the next run has to go on.
+        recordReading({
+          levelId: level?.id ?? 'free',
+          promptId: prompt.id,
+          notes: notesOf(prompt),
+          ms,
+          wrong: wrongRef.current,
+          slips: slipsRef.current,
+        })
+      }
       window.setTimeout(() => {
+        // Flow never runs out: the phrase after this one is drawn from
+        // whatever stair the dial has settled on *now*, which is how a stair
+        // earned mid-phrase takes effect at the earliest honest moment.
+        const flowing = flowRef.current
+        if (flowing) {
+          flowing.n += 1
+          setPrompts((list) => [
+            ...list,
+            flowPhrase(flowing.dial.stair, key, seed * 7919 + flowing.n * 101, flowing.n),
+          ])
+        }
         setIndex((i) => i + 1)
         beginPrompt()
       }, SETTLE_MS)
     })
 
     return stop
-  }, [stage, prompt, beginPrompt, level?.id])
+  }, [stage, prompt, beginPrompt, level?.id, key, seed, recordReading])
 
   /**
    * Play the prompt once before the attempt.
@@ -500,6 +604,9 @@ export function PracticeView() {
   // Finishing the last prompt ends the run, and a level's result is recorded.
   useEffect(() => {
     if (stage !== 'running' || prompts.length === 0 || index < prompts.length) return
+    // Flow appends its next phrase before the index catches up, so this never
+    // fires while flowing — the guard is for the moment it might anyway.
+    if (flowRef.current) return
     // Scored on the level as written, not on the extra turns. The extras are
     // there because something went wrong; counting them would make being bad at
     // a level the reason it is harder to pass.
@@ -659,7 +766,9 @@ export function PracticeView() {
           {/* A session says which part of itself you are in — warm up, review,
               or the level's own name — because "review" is the difference
               between a bar that matters and one that does not. */}
-          {stage === 'running'
+          {flowStair !== null
+            ? 'Flow'
+            : stage === 'running'
             ? labels[index] ?? level?.name ?? 'Rapid fire'
             : 'Rapid fire'}
         </span>
@@ -670,16 +779,29 @@ export function PracticeView() {
         {(stage === 'menu' || demos.some(Boolean)) && (
           <Tempo bpm={bpm} muted={theme.surface.muted} onStep={nudgeTempo} />
         )}
-        {stage === 'running' && (
-          <span className="practice__count">
-            {index + 1} <i>/</i> {prompts.length}
-          </span>
-        )}
+        {stage === 'running' &&
+          (flowStair !== null ? (
+            /* The stair, named, instead of a count — flow has no end to count
+               toward, and the name changing is how growth is announced. */
+            <span className="practice__count practice__count--flow" key={flowStair}>
+              {stairLabel(flowStair)}
+            </span>
+          ) : (
+            <span className="practice__count">
+              {index + 1} <i>/</i> {prompts.length}
+            </span>
+          ))}
         <button
           className="read__btn read__btn--text"
-          onClick={() => (stage === 'running' ? setStage('menu') : setScreen('score'))}
+          onClick={() => {
+            if (stage === 'running') setStage(flowRef.current ? 'flowdone' : 'menu')
+            else if (stage === 'flowdone') {
+              endFlow()
+              setStage('menu')
+            } else setScreen('score')
+          }}
         >
-          {stage === 'running' ? 'Stop' : 'Done'}
+          {stage === 'running' ? 'Stop' : stage === 'flowdone' ? 'Levels' : 'Done'}
         </button>
       </header>
 
@@ -796,6 +918,22 @@ export function PracticeView() {
               )}
             </div>
           </div>
+        ) : stage === 'flowdone' && flowRef.current ? (
+          <FlowDone
+            events={flowRef.current.events}
+            clean={flowRef.current.clean}
+            minutes={(performance.now() - flowRef.current.startedAt) / 60000}
+            peak={stairLabel(flowRef.current.dial.peak)}
+            surface={theme.surface}
+            onResume={() => {
+              setStage('running')
+              beginPrompt()
+            }}
+            onDone={() => {
+              endFlow()
+              setStage('menu')
+            }}
+          />
         ) : stage === 'record' ? (
           <RecordPanel
             history={history}
@@ -820,6 +958,7 @@ export function PracticeView() {
             session={sessionPlan}
             justPassed={justPassed}
             onSession={startSession}
+            onFlow={startFlow}
             onPick={startLevel}
             onFree={() => setStage('free')}
             onRecord={() => setStage('record')}
@@ -912,6 +1051,7 @@ function Levels({
   session,
   justPassed,
   onSession,
+  onFlow,
   onPick,
   onFree,
   onRecord,
@@ -923,6 +1063,7 @@ function Levels({
   session: { summary: string; prompts: unknown[] } | null
   justPassed: string | null
   onSession(): void
+  onFlow(): void
   onPick(level: Level): void
   onFree(): void
   onRecord(): void
@@ -980,6 +1121,23 @@ function Levels({
           </span>
         </button>
       )}
+
+      {/* Flow sits with the session card, above the course: the two ways to
+          just start playing, before the list of things to work through. */}
+      <button className="level level--flow" onClick={onFlow} style={card}>
+        <span
+          className="level__mark level__mark--flow"
+          style={{ color: surface.accent, boxShadow: `inset 0 0 0 1px ${surface.grid}` }}
+        >
+          ∿
+        </span>
+        <span className="level__body">
+          <span className="level__name">Flow</span>
+          <span className="level__goal" style={{ color: surface.muted }}>
+            Endless reading that starts small and grows with you. Stop whenever you like.
+          </span>
+        </span>
+      </button>
 
       <div className="levels__tabs" role="tablist">
         {LEVEL_GROUPS.map((group) => {
@@ -1050,19 +1208,18 @@ function Levels({
         )
       })}
 
-      <button className="level level--free" onClick={onFree} style={card}>
-        <span className="level__mark" style={{ boxShadow: `inset 0 0 0 1px ${surface.grid}` }}>
-          ∞
-        </span>
-        <span className="level__body">
-          <span className="level__name">Free play</span>
-        </span>
-      </button>
-
-      {/* One quiet row: the way into the record, and the way out of it all.
+      {/* One quiet row: free play, the record, and the way out of it all.
           A row rather than a stack because the list already runs the height of
-          a phone, and these are footnotes, not cards. */}
+          a phone, and these are footnotes, not cards — free play included: it
+          is a power tool, and the card it used to occupy was a whole level's
+          height spent on one word. */}
       <div className="levels__footer">
+        <button className="levels__link" style={{ color: surface.muted }} onClick={onFree}>
+          Free play
+        </button>
+        <span className="levels__dot" style={{ color: surface.muted }}>
+          ·
+        </span>
         <button className="levels__link" style={{ color: surface.muted }} onClick={onRecord}>
           Your reading record
         </button>
@@ -1070,6 +1227,56 @@ function Levels({
           ·
         </span>
         <ResetLine muted={surface.muted} onReset={onReset} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The goodbye card at the end of a flow session.
+ *
+ * Not a verdict — flow has no pass mark to hold anyone to. Just what
+ * happened: how much was read, how cleanly, and the highest kind of music
+ * reached, named the way the header named it while it was being climbed.
+ * "Keep going" is first, because stopping to look must never be the end of
+ * the session unless the reader means it to be.
+ */
+function FlowDone({
+  events,
+  clean,
+  minutes,
+  peak,
+  surface,
+  onResume,
+  onDone,
+}: {
+  events: number
+  clean: number
+  minutes: number
+  peak: string
+  surface: Theme['surface']
+  onResume(): void
+  onDone(): void
+}) {
+  return (
+    <div className="practice__summary" style={{ color: surface.text }}>
+      <div className="practice__score">
+        {events} <i>read</i>
+      </div>
+      <div className="practice__stat" style={{ color: surface.muted }}>
+        {minutes < 1 ? 'under a minute' : `${Math.round(minutes)} min`}
+        {events > 0 && ` · ${Math.round((clean / events) * 100)}% first try`}
+      </div>
+      <div className="practice__stat" style={{ color: surface.muted }}>
+        reached: {peak}
+      </div>
+      <div className="practice__actions">
+        <button className="pill pill--accent" onClick={onResume}>
+          Keep going
+        </button>
+        <button className="pill pill--solid" onClick={onDone}>
+          Done
+        </button>
       </div>
     </div>
   )
@@ -1114,6 +1321,7 @@ function RecordPanel({
         </p>
       ) : (
         <>
+          <KeyboardMap history={history} surface={surface} />
           {slow.length > 0 && (
             <section className="record__group">
               <h3 className="record__title" style={{ color: surface.muted }}>

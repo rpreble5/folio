@@ -2609,6 +2609,80 @@ body {
   opacity: 0.5;
 }
 
+/* The flow card wears the reader's accent on its mark — like the session
+   card, it is an invitation rather than a list entry. */
+.level--flow {
+  padding: 13px 15px;
+}
+
+.level__mark--flow {
+  background: transparent !important;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* On a short screen the description gives its lines back to the course —
+   the card's name and mark still say what it is, and the panel must never
+   scroll. */
+@media (max-height: 800px) {
+  .level--flow {
+    padding: 10px 15px;
+  }
+
+  .level--flow .level__goal {
+    display: none;
+  }
+}
+
+/*
+ * The stair name in the header while flowing.
+ *
+ * It is the only announcement a stair change gets — no toast, no chime — so
+ * the name arriving gets a small entrance of its own, re-keyed per stair.
+ */
+.practice__count--flow {
+  font-variant-numeric: normal;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  animation: prompt-in var(--dur) var(--ease) both;
+}
+
+/*
+ * The fluency map: the record drawn as a piano, one strip per staff.
+ */
+.record__map {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.record__strip {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.record__maplabel {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.record__map svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 64px;
+}
+
+.record__legend {
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+
 /*
  * The record page: sentences, ranged left and right like a ledger.
  */

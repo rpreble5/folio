@@ -76,3 +76,6 @@ ink-zoom-*.png
 tie-demo.png
 .weancheck.mjs
 .recordcheck.mjs
+.flowcheck.mjs
+.heightprobe.mjs
+tsconfig.tsbuildinfo

@@ -138,6 +138,16 @@ export interface ScoreOptions {
    * "The bottom note is the bass" is true in every key.
    */
   bass?: number
+  /**
+   * Which hand plays each note, decided per step.
+   *
+   * For material where the hands trade the melody — flow phrases wander
+   * between staves mid-phrase, which neither a single `hand` nor a bass count
+   * can describe. When set, rests are also filled beat by beat rather than
+   * only at the tail, because a staff can now fall silent in the *middle* of
+   * a bar and written music does not leave such a gap blank.
+   */
+  handAt?: (stepIndex: number, midi: number) => 'left' | 'right'
 }
 
 /** Beats in a bar. Everything generated here is in four. */
@@ -180,7 +190,8 @@ export function scoreFor(
    * about the chord, and the same pitch can be the bass of one chord and the top
    * of the next.
    */
-  const handFor = (midi: number, step: number[]): 'left' | 'right' => {
+  const handFor = (midi: number, step: number[], stepIndex: number): 'left' | 'right' => {
+    if (options.handAt) return options.handAt(stepIndex, midi)
     if (options.bass === undefined) return hand
     const cut = [...step].sort((a, b) => a - b)[Math.min(options.bass, step.length) - 1]
     return midi <= cut ? 'left' : 'right'
@@ -238,7 +249,7 @@ export function scoreFor(
         duration: beats,
         midi,
         spelling,
-        hand: handFor(midi, step),
+        hand: handFor(midi, step, i),
         voice: 1,
         measure: Math.floor((i * beats) / barBeats),
         velocity: 0.8,
@@ -284,6 +295,34 @@ export function scoreFor(
           wholeBar: true,
           notated: { segments: [{ type: 'whole', dots: 0, beats: barBeats }] },
         })
+        continue
+      }
+      /*
+       * Mixed-hand material can leave a staff silent in the middle of a bar —
+       * the melody crossed to the other one — and written music fills such a
+       * gap with rests, not with nothing. Beat by beat, because the steps of
+       * this material are quarters and so are its silences.
+       */
+      if (options.handAt) {
+        for (let beat = from; beat < to; beat += 1) {
+          const covered = notes.some(
+            (n) =>
+              (n.hand === 'left' ? 2 : 1) === staff &&
+              n.onset < beat + 1 - 1e-6 &&
+              n.onset + n.duration > beat + 1e-6,
+          )
+          if (!covered) {
+            rests.push({
+              id: `${id}-gap-${staff}-${beat}`,
+              onset: beat,
+              duration: 1,
+              staff,
+              voice: 1,
+              measure: bar,
+              notated: { segments: [{ type: 'quarter', dots: 0, beats: 1 }] },
+            })
+          }
+        }
         continue
       }
       // The tail of the last bar, on a staff that has been playing.
