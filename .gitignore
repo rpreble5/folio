@@ -61,3 +61,6 @@ motion-*.png
 unlock-*.png
 .colourprobe.mjs
 .colourcheck.mjs
+.tourshot.mjs
+tour-*.png
+.readprobe.mjs
