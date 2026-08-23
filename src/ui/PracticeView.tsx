@@ -34,6 +34,18 @@ import {
 } from '../practice/drills'
 import { buildRun, type Scored } from '../practice/adapt'
 import { flowPhrase, seedDial, updateDial, stairLabel, type Dial } from '../practice/flow'
+import {
+  PIECES,
+  isPieceStage,
+  pieceTally,
+  sectionStages,
+  stageDone,
+  stageLevel,
+  stageOpen,
+  type Piece,
+  type PieceHands,
+  type PieceSection,
+} from '../practice/pieces'
 import { buildSession, canPlanSession } from '../practice/plan'
 import { commonSlips, mostMissed, slowestNotes, type History } from '../practice/history'
 import { weanRules, withWeaning } from '../practice/weaning'
@@ -74,7 +86,7 @@ const SETTLE_MS = 260
  */
 const STUCK_MS = 4000
 
-type Stage = 'menu' | 'free' | 'running' | 'summary' | 'record' | 'flowdone'
+type Stage = 'menu' | 'free' | 'running' | 'summary' | 'record' | 'flowdone' | 'piece'
 
 export function PracticeView() {
   const theme = useStore((s) => s.theme)
@@ -82,6 +94,7 @@ export function PracticeView() {
   const cvd = useStore((s) => s.cvd)
   const midi = useStore((s) => s.midi)
   const setScreen = useStore((s) => s.setScreen)
+  const loadScore = useStore((s) => s.loadScore)
   const connectMidi = useStore((s) => s.connectMidi)
   const connectBluetooth = useStore((s) => s.connectBluetooth)
 
@@ -146,6 +159,18 @@ export function PracticeView() {
    * renders it until the goodbye card.
    */
   const [flowStair, setFlowStair] = useState<number | null>(null)
+  /** The piece whose sections are on screen, kept while its stages run. */
+  const [piece, setPiece] = useState<Piece | null>(null)
+  /**
+   * A one-shot "hear it" for piece runs.
+   *
+   * Pieces skip the automatic play-through — the reader asked for reading,
+   * not listening — but a phrase of Beethoven is still a phrase, so hearing
+   * it stays one tap away. A ref plus a tick rather than state, because the
+   * demo effect needs re-running without believing the prompt changed.
+   */
+  const hearWanted = useRef(false)
+  const [hearTick, setHearTick] = useState(0)
   const flowRef = useRef<{
     dial: Dial
     events: number
@@ -218,6 +243,7 @@ export function PracticeView() {
     eventAt.current = shownAt.current
     eventWrong.current = 0
     eventSlips.current = 0
+    hearWanted.current = false
     settling.current = false
     setStep(0)
     setFlash('none')
@@ -514,7 +540,8 @@ export function PracticeView() {
    * appears, or listening would count against the reader as hesitation.
    */
   useEffect(() => {
-    if (stage !== 'running' || !prompt || !(demos[index] ?? false)) return
+    if (stage !== 'running' || !prompt) return
+    if (!(demos[index] ?? false) && !hearWanted.current) return
 
     let frame = 0
     let cancelled = false
@@ -535,6 +562,7 @@ export function PracticeView() {
       cancelAnimationFrame(frame)
       player.stop()
       endDemo.current = null
+      hearWanted.current = false
       setDemoBeat(null)
       beginPrompt()
     }
@@ -566,7 +594,7 @@ export function PracticeView() {
     // restart the play-through. `replay` is the deliberate way to ask for that,
     // and it is only bumped while the demo is actually sounding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, prompt?.id, index, demos, beginPrompt, replay])
+  }, [stage, prompt?.id, index, demos, beginPrompt, replay, hearTick])
 
   /**
    * Let the wrong-note wash fade.
@@ -768,6 +796,8 @@ export function PracticeView() {
               between a bar that matters and one that does not. */}
           {flowStair !== null
             ? 'Flow'
+            : stage === 'piece' && piece
+            ? piece.title
             : stage === 'running'
             ? labels[index] ?? level?.name ?? 'Rapid fire'
             : 'Rapid fire'}
@@ -775,9 +805,24 @@ export function PracticeView() {
         <span className="practice__spacer" />
         {/* Only where it does something. A tempo control on a reading drill,
             which never plays itself, is a dial wired to nothing. Free play
-            leaves the level null, so it drops out here too. */}
-        {(stage === 'menu' || demos.some(Boolean)) && (
+            leaves the level null, so it drops out here too. Piece runs keep
+            it because "hear it" plays at whatever tempo this says. */}
+        {(stage === 'menu' ||
+          demos.some(Boolean) ||
+          (stage === 'running' && isPieceStage(level?.id))) && (
           <Tempo bpm={bpm} muted={theme.surface.muted} onStep={nudgeTempo} />
+        )}
+        {stage === 'running' && isPieceStage(level?.id) && demoBeat === null && (
+          <button
+            className="read__btn read__btn--text"
+            onClick={() => {
+              void player.unlock()
+              hearWanted.current = true
+              setHearTick((t) => t + 1)
+            }}
+          >
+            Hear it
+          </button>
         )}
         {stage === 'running' &&
           (flowStair !== null ? (
@@ -794,14 +839,28 @@ export function PracticeView() {
         <button
           className="read__btn read__btn--text"
           onClick={() => {
-            if (stage === 'running') setStage(flowRef.current ? 'flowdone' : 'menu')
-            else if (stage === 'flowdone') {
+            if (stage === 'running') {
+              // Stopping lands where you came from: a piece stage goes back
+              // to its section list, everything else to the menu.
+              setStage(
+                flowRef.current
+                  ? 'flowdone'
+                  : isPieceStage(level?.id) && piece
+                  ? 'piece'
+                  : 'menu',
+              )
+            } else if (stage === 'flowdone') {
               endFlow()
               setStage('menu')
-            } else setScreen('score')
+            } else if (stage === 'piece') setStage('menu')
+            else setScreen('score')
           }}
         >
-          {stage === 'running' ? 'Stop' : stage === 'flowdone' ? 'Levels' : 'Done'}
+          {stage === 'running'
+            ? 'Stop'
+            : stage === 'flowdone' || stage === 'piece'
+            ? 'Levels'
+            : 'Done'}
         </button>
       </header>
 
@@ -872,8 +931,13 @@ export function PracticeView() {
               >
                 Again
               </button>
-              <button className="pill pill--solid" onClick={() => setStage('menu')}>
-                Levels
+              <button
+                className="pill pill--solid"
+                onClick={() =>
+                  setStage(isPieceStage(level?.id) && piece ? 'piece' : 'menu')
+                }
+              >
+                {isPieceStage(level?.id) && piece ? 'Sections' : 'Levels'}
               </button>
             </div>
           </div>
@@ -934,6 +998,18 @@ export function PracticeView() {
               setStage('menu')
             }}
           />
+        ) : stage === 'piece' && piece ? (
+          <PiecePanel
+            piece={piece}
+            progress={progress}
+            surface={theme.surface}
+            onStage={(section, hands) => startLevel(stageLevel(piece, section, hands))}
+            onWhole={() => {
+              loadScore(piece.score)
+              setScreen('score')
+            }}
+            onBack={() => setStage('menu')}
+          />
         ) : stage === 'record' ? (
           <RecordPanel
             history={history}
@@ -960,6 +1036,10 @@ export function PracticeView() {
             onSession={startSession}
             onFlow={startFlow}
             onPick={startLevel}
+            onPiece={(next) => {
+              setPiece(next)
+              setStage('piece')
+            }}
             onFree={() => setStage('free')}
             onRecord={() => setStage('record')}
             onReset={resetRecord}
@@ -1053,6 +1133,7 @@ function Levels({
   onSession,
   onFlow,
   onPick,
+  onPiece,
   onFree,
   onRecord,
   onReset,
@@ -1065,6 +1146,7 @@ function Levels({
   onSession(): void
   onFlow(): void
   onPick(level: Level): void
+  onPiece(piece: Piece): void
   onFree(): void
   onRecord(): void
   onReset(): void
@@ -1140,9 +1222,18 @@ function Levels({
       </button>
 
       <div className="levels__tabs" role="tablist">
-        {LEVEL_GROUPS.map((group) => {
+        {/* Pieces rides along as a fifth tab: songs instead of levels, but the
+            same place in the same furniture — repertoire is not a separate
+            app, it is the other half of the course. */}
+        {[...LEVEL_GROUPS, 'Pieces' as LevelGroup].map((group) => {
           const mine = LEVELS.filter((l) => l.group === group)
-          const passed = mine.filter(done).length
+          const tallies = PIECES.map((p) => pieceTally(progress, p))
+          const passed =
+            group === 'Pieces'
+              ? tallies.reduce((a, t) => a + t.done, 0)
+              : mine.filter(done).length
+          const outOf =
+            group === 'Pieces' ? tallies.reduce((a, t) => a + t.total, 0) : mine.length
           const on = group === tab
           return (
             <button
@@ -1161,12 +1252,41 @@ function Levels({
             >
               {group}
               <span className="levels__tally" style={{ color: surface.muted }}>
-                {passed}/{mine.length}
+                {passed}/{outOf}
               </span>
             </button>
           )
         })}
       </div>
+
+      {tab === 'Pieces' &&
+        PIECES.map((entry) => {
+          const tally = pieceTally(progress, entry)
+          const learned = tally.total > 0 && tally.done >= tally.total
+          return (
+            <button
+              key={entry.id}
+              className={`level${learned ? ' level--done' : ''}`}
+              onClick={() => onPiece(entry)}
+              style={card}
+            >
+              <span className="level__mark" style={{ background: surface.grid }}>
+                <span className="level__tick">{learned ? '✓' : '♪'}</span>
+              </span>
+              <span className="level__body">
+                <span className="level__name">{entry.title}</span>
+                <span className="level__goal" style={{ color: surface.muted }}>
+                  {entry.composer} ·{' '}
+                  {learned
+                    ? 'learned — play it whole'
+                    : tally.done > 0
+                    ? `${tally.done} of ${tally.total} parts down`
+                    : `${entry.sections.length} sections, hand by hand`}
+                </span>
+              </span>
+            </button>
+          )
+        })}
 
       {shown.map(({ level, i }) => {
         const best = progress.best[level.id] ?? 0
@@ -1228,6 +1348,96 @@ function Levels({
         </span>
         <ResetLine muted={surface.muted} onReset={onReset} />
       </div>
+    </div>
+  )
+}
+
+/**
+ * One piece, cut into sections, each learnt hand by hand.
+ *
+ * A row per section with a pill per stage — right, left, together — because
+ * the method *is* the interface: the row reads left to right in the order a
+ * teacher would assign it, and "together" stays dim until each hand alone has
+ * been played cleanly. Sections are all open from the start; people learn
+ * pieces out of order all the time, and a locked bar of music you can see is
+ * pure frustration. The one gate is within a section, and it is pedagogy
+ * rather than gamification.
+ *
+ * When every part is down, the finale is not another prompt — it is the
+ * piece itself, opened whole in the score view, which has been the point all
+ * along.
+ */
+function PiecePanel({
+  piece,
+  progress,
+  surface,
+  onStage,
+  onWhole,
+  onBack,
+}: {
+  piece: Piece
+  progress: Progress
+  surface: Theme['surface']
+  onStage(section: PieceSection, hands: PieceHands): void
+  onWhole(): void
+  onBack(): void
+}) {
+  const tally = pieceTally(progress, piece)
+  const learned = tally.total > 0 && tally.done >= tally.total
+  const stageName: Record<PieceHands, string> = {
+    right: 'Right',
+    left: 'Left',
+    both: 'Together',
+  }
+  return (
+    <div className="piece" style={{ color: surface.text }}>
+      <p className="piece__intro" style={{ color: surface.muted }}>
+        {piece.composer} · each hand alone, then together. Start anywhere.
+      </p>
+      {piece.sections.map((section) => {
+        const stages = sectionStages(piece, section)
+        return (
+          <div
+            className="piece__row"
+            key={section.index}
+            style={{ background: surface.panel }}
+          >
+            <span className="piece__bars">{section.label}</span>
+            <span className="piece__stages">
+              {stages.map((hands) => {
+                const isDone = stageDone(progress, piece, section, hands)
+                const open = stageOpen(progress, piece, section, hands)
+                return (
+                  <button
+                    key={hands}
+                    className={
+                      `piece__stage${isDone ? ' piece__stage--done' : ''}` +
+                      `${open ? '' : ' piece__stage--waiting'}`
+                    }
+                    style={{
+                      color: isDone ? surface.accent : surface.text,
+                      boxShadow: `inset 0 0 0 1px ${isDone ? surface.accent : surface.grid}`,
+                    }}
+                    disabled={!open}
+                    onClick={() => onStage(section, hands)}
+                  >
+                    {isDone ? '✓ ' : ''}
+                    {stageName[hands]}
+                  </button>
+                )
+              })}
+            </span>
+          </div>
+        )
+      })}
+      {learned && (
+        <button className="pill pill--accent piece__whole" onClick={onWhole}>
+          Play it whole
+        </button>
+      )}
+      <button className="pill pill--solid" onClick={onBack}>
+        Back
+      </button>
     </div>
   )
 }

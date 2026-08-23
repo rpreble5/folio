@@ -79,3 +79,4 @@ tie-demo.png
 .flowcheck.mjs
 .heightprobe.mjs
 tsconfig.tsbuildinfo
+.piececheck.mjs

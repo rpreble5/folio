@@ -63,7 +63,7 @@ export type { Hand } from './tonality'
  * can be looked at a section at a time. Anything else — separate progress per
  * group, courses unlocking courses — would make the order mean two things.
  */
-export type LevelGroup = 'Reading' | 'Scales' | 'Blues' | 'Jazz'
+export type LevelGroup = 'Reading' | 'Scales' | 'Blues' | 'Jazz' | 'Pieces'
 
 export interface Level {
   id: string
