@@ -699,6 +699,13 @@ export interface Encodings {
    * bright mark can afford to spill a little light; on paper it just blurs.
    */
   glow?: number
+  /**
+   * A hand-drawn edge, 0 to 1: every mark's outline wanders as if inked by
+   * hand. Small amounts make a page feel made rather than generated.
+   */
+  sketch?: number
+  /** The reader's own notehead, as an SVG path in a 100 by 100 box. */
+  customShape?: string
 }
 
 export interface Surface {

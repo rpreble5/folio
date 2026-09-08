@@ -112,12 +112,15 @@ export function TextureDefs({
   textures,
   fade = 0,
   glow = 0,
+  sketch = 0,
 }: {
   textures: TextureConfig[]
   /** How far a trail fades toward the page by its end, 0 to 1. */
   fade?: number
   /** Bloom strength, 0 to 1. */
   glow?: number
+  /** Hand-drawn wobble, 0 to 1. */
+  sketch?: number
 }) {
   const wanted = textures.filter((t) => t.kind !== 'none')
   const picture = wanted.find((t) => t.kind === 'image' && t.image && t.fit !== 'cover')
@@ -152,6 +155,22 @@ export function TextureDefs({
             <feMergeNode />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
+        </filter>
+      )}
+
+      {/* The hand-drawn edge: every outline displaced by a little low-frequency
+          noise, so straight becomes almost straight. Fixed seed, so the page
+          wobbles the same way every time it is drawn. */}
+      {sketch > 0 && (
+        <filter id="sketch" x="-10%" y="-20%" width="120%" height="140%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="7" result="noise" />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="noise"
+            scale={1 + sketch * 7}
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
         </filter>
       )}
 

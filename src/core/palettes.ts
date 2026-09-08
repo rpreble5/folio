@@ -27,6 +27,13 @@ export type ShapeKind =
   | 'triangleUp'
   | 'triangleDown'
   | 'chevron'
+  | 'star'
+  | 'teardrop'
+  | 'pentagon'
+  | 'keyWhite'
+  | 'keyBlack'
+  /** The reader's own path, from the Studio. */
+  | 'custom'
 
 export interface Palette {
   id: string
@@ -711,7 +718,7 @@ export interface ShapeSet {
   id: string
   name: string
   note: string
-  domain: 'fixed' | 'accidental' | 'duration' | 'hand' | 'scaleDegree'
+  domain: 'fixed' | 'accidental' | 'duration' | 'hand' | 'scaleDegree' | 'blackKey'
   shapes: ShapeKind[]
 }
 
@@ -736,6 +743,27 @@ export const SHAPE_SETS: ShapeSet[] = [
     note: 'The traditional oval notehead, tilted the way it is engraved. Length still carries duration, so there are no stems or flags to disagree with it.',
     domain: 'fixed',
     shapes: ['oval'],
+  },
+  {
+    id: 'teardrop',
+    name: 'Teardrop',
+    note: 'Round at the back, pointed the way the music is going.',
+    domain: 'fixed',
+    shapes: ['teardrop'],
+  },
+  {
+    id: 'star',
+    name: 'Star',
+    note: 'A five-point star for every note. Playful, and still a clear head.',
+    domain: 'fixed',
+    shapes: ['star'],
+  },
+  {
+    id: 'keys',
+    name: 'Keys',
+    note: 'Drawn like the keys themselves: white keys full height, black keys narrow and squared. The keyboard, laid on its side.',
+    domain: 'blackKey',
+    shapes: ['keyWhite', 'keyBlack'],
   },
   {
     id: 'accidental',
@@ -768,6 +796,13 @@ export const SHAPE_SETS: ShapeSet[] = [
       'diamond', 'chevron', 'diamond', 'capsule', 'diamond', 'triangleDown',
     ],
   },
+  {
+    id: 'custom',
+    name: 'Your own',
+    note: 'Paste an SVG path drawn in a 100 by 100 box, and every note wears it.',
+    domain: 'fixed',
+    shapes: ['custom'],
+  },
 ]
 
 export function getShapeSet(id: string): ShapeSet {
@@ -797,5 +832,7 @@ export function shapeFor(set: ShapeSet, note: NoteEvent, key: KeyMark): ShapeKin
       return set.shapes[note.hand === 'right' ? 0 : 1]
     case 'scaleDegree':
       return set.shapes[scaleDegree(note.midi, key)] ?? set.shapes[0]
+    case 'blackKey':
+      return set.shapes[isBlackKey(note.midi) ? 1 : 0]
   }
 }

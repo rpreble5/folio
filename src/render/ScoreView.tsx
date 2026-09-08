@@ -182,6 +182,7 @@ export function ScoreView({
       <TextureDefs
         fade={theme.encodings.trailFade ?? 0}
         glow={theme.encodings.glow ?? 0}
+        sketch={theme.encodings.sketch ?? 0}
         textures={[
           theme.encodings.texture,
           pageTexture,
@@ -563,6 +564,7 @@ function SystemGroup({
         transform={`translate(${layout.gutter}, 0)`}
         filter={(encodings.glow ?? 0) > 0 ? 'url(#glow)' : undefined}
       >
+       <g filter={(encodings.sketch ?? 0) > 0 ? 'url(#sketch)' : undefined}>
         {system.notes.map((placed) => {
           const active = activeIds.has(placed.note.id)
           return (
@@ -612,6 +614,7 @@ function SystemGroup({
                 trailGrain={encodings.trailGrain}
                 trailFill={placed.style.trailFill}
                 trailFade={encodings.trailFade ?? 0}
+                customShape={encodings.customShape}
               />
               )}
               {/* One label per note, on the head it begins with. A tied note's
@@ -639,6 +642,7 @@ function SystemGroup({
             </g>
           )
         })}
+       </g>
       </g>
 
       {/* Traditional notation: stems, beams, flags, rests, clef, key, time. */}

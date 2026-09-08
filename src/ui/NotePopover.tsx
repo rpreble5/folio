@@ -20,6 +20,7 @@ import { Field, ShapeMark } from './controls'
 
 const SHAPES: ShapeKind[] = [
   'capsule', 'circle', 'rect', 'hexagon', 'diamond', 'triangleUp', 'triangleDown', 'chevron',
+  'star', 'teardrop', 'pentagon',
 ]
 
 /** A calm, wide-gamut set that still reads on a dark page. */

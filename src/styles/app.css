@@ -1397,6 +1397,14 @@ button {
   transition: background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
+/* A pasted path: monospace, and allowed to wrap. */
+.text-input--path {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  resize: none;
+}
+
 .text-input::placeholder {
   color: var(--ink-3);
 }

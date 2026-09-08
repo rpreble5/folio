@@ -15,6 +15,7 @@ import { useStore, type StudioTab } from '../state/store'
 import { PAGES, PRESETS, TRAIL_PRESETS } from '../core/presets'
 import { NoteGlyph } from '../render/NoteGlyph'
 import { cyclesAcross } from '../render/textures'
+import { DEFAULT_CUSTOM_SHAPE } from '../render/shapes'
 import {
   COLOR_SOURCES,
   HUE_ORDERS,
@@ -769,15 +770,36 @@ function MarksTab() {
               title={set.note}
             >
               <div className="tile__shapes">
-                {set.shapes.slice(0, 4).map((shape, i) => (
-                  <ShapeMark key={i} shape={shape} size={14} />
+                {set.shapes.slice(0, 3).map((shape, i) => (
+                  <ShapeMark
+                    key={i}
+                    shape={shape}
+                    size={14}
+                    custom={theme.encodings.customShape ?? DEFAULT_CUSTOM_SHAPE}
+                  />
                 ))}
               </div>
               <div className="tile__name">{set.name}</div>
             </Tile>
           ))}
         </div>
-        <p className="note-text">{shapeSet?.note}</p>
+        {shapeSetId === 'custom' ? (
+          <Field name="Your path">
+            {/* A path, pasted. Drawn in a 100-unit box: the one convention the
+                reader has to know, and it is written where they type. */}
+            <textarea
+              className="text-input text-input--path"
+              rows={2}
+              spellCheck={false}
+              value={theme.encodings.customShape ?? DEFAULT_CUSTOM_SHAPE}
+              placeholder="M 50 0 L 100 50 L 50 100 L 0 50 Z"
+              onChange={(e) => patchEncodings({ customShape: e.target.value })}
+            />
+            <p className="note-text">{shapeSet?.note}</p>
+          </Field>
+        ) : (
+          <p className="note-text">{shapeSet?.note}</p>
+        )}
       </Group>
 
       {/* The trail carries duration. Head and trail are drawn as overlapping
@@ -862,15 +884,26 @@ function MarksTab() {
           value={theme.encodings.trailFade ?? 0}
           onChange={(trailFade) => patchEncodings({ trailFade })}
         />
-        <Range
-          name="Glow"
-          display={(theme.encodings.glow ?? 0) === 0 ? 'None' : `${Math.round((theme.encodings.glow ?? 0) * 100)}%`}
-          min={0}
-          max={1}
-          step={0.05}
-          value={theme.encodings.glow ?? 0}
-          onChange={(glow) => patchEncodings({ glow })}
-        />
+        <div className="slider-pair">
+          <Range
+            name="Glow"
+            display={(theme.encodings.glow ?? 0) === 0 ? 'None' : `${Math.round((theme.encodings.glow ?? 0) * 100)}%`}
+            min={0}
+            max={1}
+            step={0.05}
+            value={theme.encodings.glow ?? 0}
+            onChange={(glow) => patchEncodings({ glow })}
+          />
+          <Range
+            name="Hand-drawn"
+            display={(theme.encodings.sketch ?? 0) === 0 ? 'None' : `${Math.round((theme.encodings.sketch ?? 0) * 100)}%`}
+            min={0}
+            max={1}
+            step={0.05}
+            value={theme.encodings.sketch ?? 0}
+            onChange={(sketch) => patchEncodings({ sketch })}
+          />
+        </div>
         <Field name="Texture">
           <Pills
             options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}

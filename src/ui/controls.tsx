@@ -12,6 +12,7 @@
 
 import { useCallback, useRef, type ReactNode } from 'react'
 import type { ShapeKind } from '../core/palettes'
+import { customTransform, headPath } from '../render/shapes'
 
 export function Group({ label, children }: { label?: string; children: ReactNode }) {
   return (
@@ -350,42 +351,31 @@ export function Tile({
 }
 
 /** Miniature note glyph, used inside tiles and the note popover. */
+/**
+ * A shape as a swatch. The same geometry the score draws, so a tile shows
+ * exactly the head a note will get — including the reader's own path.
+ */
 export function ShapeMark({
   shape,
   color = 'currentColor',
   size = 15,
+  custom,
 }: {
   shape: ShapeKind
   color?: string
   size?: number
+  custom?: string
 }) {
-  const r = size / 2
-  const c = size / 2
-
-  const paths: Partial<Record<ShapeKind, string>> = {
-    diamond: `M ${c} 0 L ${size} ${c} L ${c} ${size} L 0 ${c} Z`,
-    triangleUp: `M ${c} 0 L ${size} ${size * 0.88} L 0 ${size * 0.88} Z`,
-    triangleDown: `M ${c} ${size} L ${size} ${size * 0.12} L 0 ${size * 0.12} Z`,
-    hexagon: `M ${c - r * 0.55} 0 L ${c + r * 0.55} 0 L ${size} ${c} L ${c + r * 0.55} ${size} L ${c - r * 0.55} ${size} L 0 ${c} Z`,
-    chevron: `M 0 0 L ${c + r * 0.35} 0 L ${size} ${c} L ${c + r * 0.35} ${size} L 0 ${size} L ${r * 0.7} ${c} Z`,
-  }
-
+  // A little inset so the oval's tilt and the star's points are not clipped.
+  const inset = 1
+  const box = size - inset * 2
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-      {shape === 'circle' && <circle cx={c} cy={c} r={r} fill={color} />}
-      {shape === 'oval' && (
-        <ellipse
-          cx={c}
-          cy={c}
-          rx={r * 1.24}
-          ry={r * 0.86}
-          fill={color}
-          transform={`rotate(-21 ${c} ${c})`}
-        />
-      )}
-      {shape === 'capsule' && <rect width={size} height={size} rx={r} fill={color} />}
-      {shape === 'rect' && <rect width={size} height={size} rx={2} fill={color} />}
-      {paths[shape] && <path d={paths[shape]} fill={color} />}
+      <path
+        d={headPath(shape, inset, inset, box, 2, custom)}
+        transform={shape === 'custom' ? customTransform(inset, inset, box) : undefined}
+        fill={color}
+      />
     </svg>
   )
 }

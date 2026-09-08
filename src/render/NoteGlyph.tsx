@@ -19,6 +19,7 @@
 import type { ShapeKind } from '../core/palettes'
 import type { TextureConfig, TrailConfig } from '../core/theme'
 import { textureFill } from './textures'
+import { BLACK_KEY_SQUEEZE, HEAD_SHAPES, customTransform, headPath } from './shapes'
 
 interface Props {
   x: number
@@ -43,79 +44,8 @@ interface Props {
   trailFill?: string
   /** 0 to 1: how far the trail fades toward the page by its end. */
   trailFade?: number
-}
-
-/** Heads drawn at a fixed size, with the duration carried by the trail. */
-const HEAD_SHAPES = new Set<ShapeKind>([
-  'circle',
-  'oval',
-  'hexagon',
-  'diamond',
-  'triangleUp',
-  'triangleDown',
-  'chevron',
-])
-
-/** Degrees. Engraved noteheads sit around twenty; more reads as a slash. */
-const OVAL_TILT = -21
-
-function headPath(shape: ShapeKind, x: number, y: number, size: number, radius: number): string {
-  const cx = x + size / 2
-  const cy = y + size / 2
-  const r = size / 2
-
-  switch (shape) {
-    case 'diamond':
-      return `M ${cx} ${cy - r} L ${cx + r} ${cy} L ${cx} ${cy + r} L ${cx - r} ${cy} Z`
-    case 'triangleUp':
-      return `M ${cx} ${cy - r} L ${cx + r} ${cy + r * 0.8} L ${cx - r} ${cy + r * 0.8} Z`
-    case 'triangleDown':
-      return `M ${cx} ${cy + r} L ${cx + r} ${cy - r * 0.8} L ${cx - r} ${cy - r * 0.8} Z`
-    case 'chevron':
-      return `M ${cx - r} ${cy - r} L ${cx + r * 0.35} ${cy - r} L ${cx + r} ${cy} L ${cx + r * 0.35} ${cy + r} L ${cx - r} ${cy + r} L ${cx - r * 0.3} ${cy} Z`
-    case 'hexagon': {
-      const w = r * 0.55
-      return `M ${cx - w} ${cy - r} L ${cx + w} ${cy - r} L ${cx + r} ${cy} L ${cx + w} ${cy + r} L ${cx - w} ${cy + r} L ${cx - r} ${cy} Z`
-    }
-    case 'circle':
-      return `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
-    case 'oval': {
-      /*
-       * A traditional notehead: an ellipse about 1.4 times wider than tall,
-       * tilted so its long axis rises to the right. The tilt is not decoration
-       * — it is what stops two heads a second apart from overlapping, and it is
-       * the thing that makes the shape read as a notehead rather than a dot.
-       *
-       * Drawn as two arcs using the arc command's own x-axis-rotation, so the
-       * rotation lives in the path data and no wrapping transform is needed.
-       */
-      const rx = r * 1.24
-      const ry = r * 0.86
-      const rad = (OVAL_TILT * Math.PI) / 180
-      const dx = rx * Math.cos(rad)
-      const dy = rx * Math.sin(rad)
-      return (
-        `M ${cx - dx} ${cy - dy}` +
-        ` A ${rx} ${ry} ${OVAL_TILT} 1 1 ${cx + dx} ${cy + dy}` +
-        ` A ${rx} ${ry} ${OVAL_TILT} 1 1 ${cx - dx} ${cy - dy} Z`
-      )
-    }
-    case 'capsule':
-    case 'rect': {
-      const rad = shape === 'capsule' ? r : Math.min(radius, r)
-      return roundedRect(x, y, size, size, rad)
-    }
-  }
-}
-
-function roundedRect(x: number, y: number, w: number, h: number, r: number): string {
-  const rr = Math.min(r, w / 2, h / 2)
-  return (
-    `M ${x + rr} ${y} H ${x + w - rr} A ${rr} ${rr} 0 0 1 ${x + w} ${y + rr}` +
-    ` V ${y + h - rr} A ${rr} ${rr} 0 0 1 ${x + w - rr} ${y + h}` +
-    ` H ${x + rr} A ${rr} ${rr} 0 0 1 ${x} ${y + h - rr}` +
-    ` V ${y + rr} A ${rr} ${rr} 0 0 1 ${x + rr} ${y} Z`
-  )
+  /** The reader's own head, for the 'custom' shape. */
+  customShape?: string
 }
 
 /**
@@ -165,15 +95,22 @@ export function NoteGlyph({
   trailGrain,
   trailFill,
   trailFade = 0,
+  customShape,
 }: Props) {
   const headSize = height
   const half = height / 2
   const cy = y + half
-  const head = headPath(shape, x, y, headSize, cornerRadius)
+  const head = headPath(shape, x, y, headSize, cornerRadius, customShape)
+  // A custom path lives in a 100-unit box and is scaled into place; every
+  // other head is built at its real size.
+  const headTransform = shape === 'custom' ? customTransform(x, y, headSize) : undefined
 
+  // A black key on the Keys shapes is shorter than its neighbours, trail and
+  // all — that is what makes it read as the narrow key it is.
+  const squeeze = shape === 'keyBlack' ? BLACK_KEY_SQUEEZE : 1
   const thickness = Math.max(0, Math.min(1, trail.thickness))
-  const h0 = half * (thickness + (1 - thickness) * trail.melt)
-  const h1 = half * thickness * (1 - trail.taper)
+  const h0 = half * (thickness + (1 - thickness) * trail.melt) * squeeze
+  const h1 = half * thickness * (1 - trail.taper) * squeeze
   const trailEnd = x + Math.max(width, headSize)
   const trailStart = x + headSize / 2
   const hasTrail = trail.opacity > 0 && thickness > 0 && trailEnd - trailStart > 2
@@ -226,8 +163,15 @@ export function NoteGlyph({
         </>
       )}
 
-      <path d={head} {...common} />
-      {pattern && <path d={head} fill={pattern} opacity={texture.strength} />}
+      <path
+        d={head}
+        {...common}
+        transform={headTransform}
+        vectorEffect={headTransform ? 'non-scaling-stroke' : undefined}
+      />
+      {pattern && (
+        <path d={head} fill={pattern} opacity={texture.strength} transform={headTransform} />
+      )}
 
       {selected && (
         <rect
@@ -247,3 +191,4 @@ export function NoteGlyph({
 }
 
 export { HEAD_SHAPES }
+export type { ShapeKind }
