@@ -42,6 +42,7 @@ import {
 } from './StaffEditor'
 import {
   ANCHOR_OPTIONS,
+  BEAT_SHADES,
   DASH_KINDS,
   LABEL_FONTS,
   LABEL_INKS,
@@ -57,6 +58,7 @@ import {
   describeSelector,
   makeSurface,
   worstLabelContrast,
+  type BeatShade,
   type LabelInk,
   type LabelKind,
   type LabelOn,
@@ -1717,7 +1719,7 @@ function FormTab() {
   }
 
   return (
-    <div className="columns columns--4">
+    <div className="columns columns--form">
       <Group label="Form">
         <Field name="Notation">
           <Pills
@@ -1875,6 +1877,42 @@ function FormTab() {
             />
           </>
         )}
+      </Group>
+
+      {/* Guides: structure under the notes, in the page's ink at a whisper.
+          Time first, then the key, then the hand — the three things a reader
+          works out before reading a single pitch. */}
+      <Group label="Guides">
+        <Field name="Shade the beat">
+          <Pills
+            options={BEAT_SHADES.map((b) => ({ value: b.id, label: b.label }))}
+            value={layout.beatShade ?? 'none'}
+            onChange={(beatShade: BeatShade) => patchLayout({ beatShade })}
+          />
+        </Field>
+        {isRoll && (
+          <>
+            <Switch
+              label="Light the key's lanes"
+              checked={layout.litLanes ?? false}
+              onChange={(litLanes) => patchLayout({ litLanes })}
+            />
+            <Switch
+              label="Block out chords"
+              checked={layout.chordBlocks ?? false}
+              onChange={(chordBlocks) => patchLayout({ chordBlocks })}
+            />
+          </>
+        )}
+        <Range
+          name="Strength"
+          display={`${Math.round((layout.guideStrength ?? 0.08) * 100)}%`}
+          min={0.02}
+          max={0.4}
+          step={0.02}
+          value={layout.guideStrength ?? 0.08}
+          onChange={(guideStrength) => patchLayout({ guideStrength })}
+        />
       </Group>
     </div>
   )

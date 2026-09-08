@@ -387,6 +387,24 @@ button {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
 }
 
+/* Form holds five short cards: they sit in one row rather than wrapping a
+   lone fifth underneath, which would cost the panel the height of a card. */
+.columns--form {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .columns--form {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 900px) {
+  .columns--form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Shape has seven tiles and wants four to a row; Texture is a row of pills. */
 .columns--notes {
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.8fr);

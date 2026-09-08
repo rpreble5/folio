@@ -365,9 +365,36 @@ export interface NotationConfig {
   opacity: number
 }
 
+/**
+ * Tinting the rhythm's grid, so time is visible before the notes are.
+ *
+ * Downbeat marks the first beat of every bar; zebra alternates whole bars.
+ * Either one gives the eye a place to land on a bar before it has counted
+ * anything, which is what reading rhythm at a glance is.
+ */
+export type BeatShade = 'none' | 'downbeat' | 'zebra'
+
+export const BEAT_SHADES: { id: BeatShade; label: string }[] = [
+  { id: 'none', label: 'None' },
+  { id: 'downbeat', label: 'Downbeats' },
+  { id: 'zebra', label: 'Alternate bars' },
+]
+
 export interface LayoutConfig {
   mode: LayoutMode
   pitchAxis: PitchAxis
+  /** Guides drawn under the notes. Absent means none, which is the old page. */
+  beatShade?: BeatShade
+  /**
+   * Light the lanes of the key's own notes on a roll, so the key shows the way
+   * a signature does on a staff — and a note off the lit lanes is visibly
+   * outside the key before its colour says so.
+   */
+  litLanes?: boolean
+  /** Wrap notes struck together by one hand in a faint block: one hand-shape. */
+  chordBlocks?: boolean
+  /** How strongly all three guides are drawn, 0 to 1. */
+  guideStrength?: number
   /**
    * Present and engraved-spaced, or absent and proportional. Absent on every
    * roll preset, so the roll's placement code is never even reached.

@@ -1,13 +1,13 @@
 import { useMemo } from 'react'
 import type { Score } from '../core/types'
-import { diatonicIndex, keyboardPosition, octaveOf, pitchClass } from '../core/pitch'
+import { diatonicIndex, isDiatonic, keyboardPosition, octaveOf, pitchClass } from '../core/pitch'
 import type { LineRole, LineStyle, Surface, TextureConfig, Theme } from '../core/theme'
 import type { LabelPlace } from '../core/theme'
 import { NO_TEXTURE, dashArray, fontStack, lineColor, staffLineStyle } from '../core/theme'
 import { lightnessOf } from '../core/oklch'
 import { buildPalette, colorForPitch } from '../core/palettes'
-import { keyAt } from '../core/types'
-import type { Layout, System } from './layout'
+import { keyAt, timeSignatureAt } from '../core/types'
+import type { Layout, PlacedNote, System } from './layout'
 import { beatToX } from './layout'
 import { NoteGlyph } from './NoteGlyph'
 import { NotationLayer, headGlyphFor } from './NotationLayer'
@@ -302,8 +302,54 @@ function SystemGroup({
   const notation = cfg.notation
   const headGlyph = notation?.heads ? headGlyphFor : null
 
+  // The guides under the music: the rhythm's grid as tint, the key as lit
+  // lanes, chords as blocks. All in the page's ink at a whisper, so they are
+  // structure rather than decoration and read on a dark page and on paper.
+  const guide = cfg.guideStrength ?? 0.08
+  const shade = cfg.beatShade ?? 'none'
+  const key = keyAt(score, system.startBeat)
+  const beatLength = 4 / timeSignatureAt(score, system.startBeat).denominator
+  const chords = cfg.chordBlocks && !isStaff ? chordGroups(system.notes) : []
+
   return (
     <g transform={`translate(0, ${top})`} data-slot={system.index}>
+      {shade !== 'none' &&
+        system.measures.map((measure) => {
+          if (shade === 'zebra' && measure.index % 2 === 1) return null
+          const width =
+            shade === 'zebra'
+              ? measure.width
+              : beatToX(system, measure.startBeat + beatLength, layout.beatWidth) - measure.x
+          return (
+            <rect
+              key={`shade-${measure.index}`}
+              className="score__beat-shade"
+              x={layout.gutter + measure.x}
+              y={0}
+              width={Math.max(0, width)}
+              height={layout.systemInnerHeight}
+              fill={surface.text}
+              opacity={guide}
+            />
+          )
+        })}
+
+      {!isStaff && cfg.litLanes &&
+        layout.keyRows
+          .filter((row) => isDiatonic(row.midi, key))
+          .map((row) => (
+            <rect
+              key={`lane-${row.midi}`}
+              className="score__lane"
+              x={layout.gutter}
+              y={row.y}
+              width={systemWidth}
+              height={row.height}
+              fill={surface.text}
+              opacity={guide * 0.7}
+            />
+          ))}
+
       {/* Black-key bands: the strongest orientation cue on a chromatic axis. */}
       {!isStaff && cfg.showBlackKeyRows &&
         layout.keyRows
@@ -490,6 +536,27 @@ function SystemGroup({
         </g>
       ))}
 
+      {/* Chord blocks: notes struck together by one hand, wrapped as one
+          shape, under the notes and over the lanes. The block spans the
+          shortest note, which is the part that actually sounds together. */}
+      {chords.length > 0 && (
+        <g transform={`translate(${layout.gutter}, 0)`}>
+          {chords.map((chord) => (
+            <rect
+              key={chord.key}
+              className="score__chord"
+              x={chord.x - 3}
+              y={chord.y - 3}
+              width={chord.width + 6}
+              height={chord.height + 6}
+              rx={Math.min(8, layout.noteHeight / 2 + 3)}
+              fill={surface.text}
+              opacity={guide * 1.2}
+            />
+          ))}
+        </g>
+      )}
+
       {/* Notes. The glow is one filter over the whole group rather than one
           per note: a halo is cheap once and ruinous four hundred times. */}
       <g
@@ -605,6 +672,36 @@ function SystemGroup({
       )}
     </g>
   )
+}
+
+/**
+ * Notes one hand strikes together, as the box around them.
+ *
+ * Grouped by hand as well as onset: two hands landing on the same beat are
+ * two shapes, and a block across both would say the wrong thing about how
+ * they are played. Tied continuations are not strikes and do not count.
+ */
+function chordGroups(
+  notes: PlacedNote[],
+): { key: string; x: number; y: number; width: number; height: number }[] {
+  const groups = new Map<string, PlacedNote[]>()
+  for (const placed of notes) {
+    if ((placed.segment ?? 0) !== 0) continue
+    const key = `${placed.note.hand}:${placed.note.onset.toFixed(4)}`
+    const list = groups.get(key)
+    if (list) list.push(placed)
+    else groups.set(key, [placed])
+  }
+  const out: { key: string; x: number; y: number; width: number; height: number }[] = []
+  for (const [key, list] of groups) {
+    if (list.length < 2) continue
+    const x = Math.min(...list.map((p) => p.x))
+    const y = Math.min(...list.map((p) => p.y))
+    const bottom = Math.max(...list.map((p) => p.y + p.height))
+    const width = Math.min(...list.map((p) => Math.max(p.width, p.height)))
+    out.push({ key, x, y, width, height: bottom - y })
+  }
+  return out
 }
 
 /** Whole-beat gridlines, skipping the downbeat since a barline already covers it. */
