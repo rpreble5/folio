@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import type { Score } from '../core/types'
 import { diatonicIndex, keyboardPosition, octaveOf, pitchClass } from '../core/pitch'
-import type { LineRole, LineStyle, Surface, Theme } from '../core/theme'
+import type { LineRole, LineStyle, Surface, TextureConfig, Theme } from '../core/theme'
 import type { LabelPlace } from '../core/theme'
 import { NO_TEXTURE, dashArray, fontStack, lineColor, staffLineStyle } from '../core/theme'
+import { lightnessOf } from '../core/oklch'
 import { buildPalette, colorForPitch } from '../core/palettes'
 import { keyAt } from '../core/types'
 import type { Layout, System } from './layout'
@@ -144,7 +145,16 @@ export function ScoreView({
   }, [score])
 
   const filter = cvdFilterUrl(cvd)
-  const pageFill = textureFill(cfg.pageTexture)
+  // The page inks its own texture: light grain on a dark page, dark on paper.
+  // A page never chooses the wrong one, which the old fixed 'dark' did on
+  // every dark page — invisibly.
+  const pageTexture: TextureConfig = {
+    ...cfg.pageTexture,
+    ink: lightnessOf(surface.background) < 0.5 ? 'light' : 'dark',
+  }
+  const pageFill = textureFill(pageTexture)
+  const cover =
+    pageTexture.kind === 'image' && pageTexture.fit === 'cover' ? pageTexture.image : undefined
 
   // Resolved once for the page: which colour each staff line would wear if it
   // is set to match its note. Keyed off the score's opening key, since a line
@@ -174,7 +184,7 @@ export function ScoreView({
         glow={theme.encodings.glow ?? 0}
         textures={[
           theme.encodings.texture,
-          cfg.pageTexture,
+          pageTexture,
           // Space shading can carry its own texture, and a pattern that is not
           // defined here simply renders as nothing.
           ...Object.values(cfg.staff.spaces).map((sp) => ({
@@ -188,7 +198,18 @@ export function ScoreView({
       {/* Page grain sits under everything, and wants a much coarser scale than
           the notes so it does not compete with them for the same channel. */}
       {pageFill && (
-        <rect width="100%" height="100%" fill={pageFill} opacity={cfg.pageTexture.strength} />
+        <rect width="100%" height="100%" fill={pageFill} opacity={pageTexture.strength} />
+      )}
+      {/* The reader's own picture, laid over the page once. */}
+      {cover && (
+        <image
+          className="score__cover"
+          href={cover}
+          width="100%"
+          height="100%"
+          preserveAspectRatio="xMidYMid slice"
+          opacity={pageTexture.strength}
+        />
       )}
 
       <g filter={filter}>

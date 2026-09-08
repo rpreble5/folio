@@ -10,7 +10,7 @@
  * your peripheral vision at the moment you make it.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useStore, type StudioTab } from '../state/store'
 import { PAGES, PRESETS, TRAIL_PRESETS } from '../core/presets'
 import { NoteGlyph } from '../render/NoteGlyph'
@@ -67,6 +67,7 @@ import {
   type SpacingConfig,
   type TintDir,
   type TextureConfig,
+  type TextureFit,
   type TrailColor,
   type TrailConfig,
 } from '../core/theme'
@@ -200,6 +201,10 @@ function StylesTab() {
   const patchLayout = useStore((s) => s.patchLayout)
   const { layout } = theme
   const [name, setName] = useState('')
+  const pictureInput = useRef<HTMLInputElement>(null)
+  const page = layout.pageTexture
+  const patchPage = (patch: Partial<TextureConfig>) =>
+    patchLayout({ pageTexture: { ...page, ...patch } })
 
   const save = () => {
     if (!name.trim()) return
@@ -269,28 +274,77 @@ function StylesTab() {
         </div>
 
         {/* Page grain wants a coarser scale than the notes, or the two compete
-            for the same channel and the page wins by sheer area. */}
+            for the same channel and the page wins by sheer area. The drawn
+            patterns first, then the image tiles, then the reader's own
+            picture — which is not a kind you can pick, only one you can
+            bring. */}
         <Field name="Texture">
           <Pills
             options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}
-            value={layout.pageTexture.kind}
-            onChange={(kind) =>
-              patchLayout({ pageTexture: { ...layout.pageTexture, kind } })
-            }
+            value={page.kind === 'image' ? 'image' : page.kind}
+            onChange={(kind) => patchPage({ kind })}
           />
         </Field>
-        {layout.pageTexture.kind !== 'none' && (
-          <Range
-            name="Grain strength"
-            display={`${Math.round(layout.pageTexture.strength * 100)}%`}
-            min={0.02}
-            max={0.3}
-            step={0.02}
-            value={layout.pageTexture.strength}
-            onChange={(strength) =>
-              patchLayout({ pageTexture: { ...layout.pageTexture, strength } })
-            }
+        <div className="page-picture">
+          <button
+            className={`pill pill--solid${page.kind === 'image' ? ' pill--on' : ''}`}
+            onClick={() => pictureInput.current?.click()}
+          >
+            {page.kind === 'image' ? 'Another picture…' : 'Your own picture…'}
+          </button>
+          {page.kind === 'image' && page.image && (
+            <Pills
+              options={[
+                { value: 'cover', label: 'Cover' },
+                { value: 'tile', label: 'Tile' },
+              ]}
+              value={page.fit ?? 'cover'}
+              onChange={(fit: TextureFit) => patchPage({ fit })}
+            />
+          )}
+          <input
+            ref={pictureInput}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              e.target.value = ''
+              if (!file) return
+              void readPicture(file).then((image) =>
+                patchPage({
+                  kind: 'image',
+                  image,
+                  fit: page.fit ?? 'cover',
+                  strength: Math.max(page.strength, 0.6),
+                }),
+              )
+            }}
           />
+        </div>
+        {page.kind !== 'none' && (
+          <div className="slider-pair">
+            <Range
+              name="Strength"
+              display={`${Math.round(page.strength * 100)}%`}
+              min={0.02}
+              max={1}
+              step={0.02}
+              value={page.strength}
+              onChange={(strength) => patchPage({ strength })}
+            />
+            {!(page.kind === 'image' && (page.fit ?? 'cover') === 'cover') && (
+              <Range
+                name="Scale"
+                display={`${page.scale.toFixed(2)}×`}
+                min={0.3}
+                max={3}
+                step={0.05}
+                value={page.scale}
+                onChange={(scale) => patchPage({ scale })}
+              />
+            )}
+          </div>
         )}
       </Group>
 
@@ -1824,6 +1878,34 @@ function FormTab() {
       </Group>
     </div>
   )
+}
+
+/**
+ * The reader's picture, shrunk to something a style can keep.
+ *
+ * A style is saved to local storage, which is small, and a phone photograph
+ * is not — so it is resampled to a modest size and re-encoded before it
+ * becomes part of the theme. At page-texture strengths nobody will miss the
+ * pixels.
+ */
+async function readPicture(file: File): Promise<string> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = () => reject(new Error('Could not read that picture.'))
+      image.src = url
+    })
+    const k = Math.min(1, 720 / Math.max(img.width, img.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(img.width * k))
+    canvas.height = Math.max(1, Math.round(img.height * k))
+    canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', 0.82)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 const countShifted = (color: ColorConfig): number =>

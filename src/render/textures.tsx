@@ -6,30 +6,53 @@
  * already exactly coincident with what it is texturing — and keeps one shared
  * pattern definition serving every note on the page.
  *
- * A caveat worth knowing rather than hiding: texture only reads as texture when
- * a mark is big enough to hold roughly three cycles of it. Below that it is
- * just noise, which is why the Studio warns when notes are too small for the
- * scale chosen.
+ * Three families share the mechanism. Drawn patterns are a few marks in an
+ * eight-unit tile. Image tiles are seamless rasters bundled with the app,
+ * alpha-only, inked at render time through a small filter so one file serves
+ * a dark page and a paper one alike. The reader's own picture is the third:
+ * tiled through the same pattern, or laid over the page once, which is not a
+ * pattern at all and is drawn by the page itself.
+ *
+ * A caveat worth knowing rather than hiding: a drawn texture only reads as
+ * texture when a mark is big enough to hold roughly three cycles of it. Below
+ * that it is just noise, which is why the Studio warns when notes are too
+ * small for the scale chosen.
  */
 
-import type { TextureConfig, TextureKind } from '../core/theme'
+import { IMAGE_TEXTURES, isImageTexture, type TextureConfig, type TextureKind } from '../core/theme'
 
 /** Base tile size in user units, before the config's scale is applied. */
 const TILE = 8
+/** Image tiles are drawn larger: a texture is a surface, not a pattern. */
+const IMAGE_TILE = 128
+/** The reader's picture, as a tile. */
+const PICTURE_TILE = 160
 
 const LIGHT = '#ffffff'
 const DARK = '#000000'
 
 export function textureId(kind: TextureKind, ink: 'light' | 'dark'): string {
-  return `tex-${kind}-${ink}`
+  return kind === 'image' ? 'tex-image' : `tex-${kind}-${ink}`
 }
 
+/**
+ * The fill that paints this texture, or nothing when there is nothing to
+ * paint — no texture, or a picture that covers the page rather than tiling
+ * it, which the page draws as an image in its own right.
+ */
 export function textureFill(texture: TextureConfig): string | undefined {
   if (texture.kind === 'none') return undefined
+  if (texture.kind === 'image') {
+    return texture.image && texture.fit !== 'cover' ? `url(#${textureId('image', 'dark')})` : undefined
+  }
   return `url(#${textureId(texture.kind, texture.ink)})`
 }
 
-function Tile({ kind, ink }: { kind: Exclude<TextureKind, 'none'>; ink: 'light' | 'dark' }) {
+/** Where a bundled tile lives, under whatever base the app is served from. */
+export const textureHref = (kind: TextureKind): string =>
+  `${import.meta.env.BASE_URL}${IMAGE_TEXTURES[kind] ?? ''}`
+
+function Tile({ kind, ink }: { kind: TextureKind; ink: 'light' | 'dark' }) {
   const color = ink === 'light' ? LIGHT : DARK
 
   switch (kind) {
@@ -71,10 +94,13 @@ function Tile({ kind, ink }: { kind: Exclude<TextureKind, 'none'>; ink: 'light' 
           <rect x={4} y={4} width={4} height={4} fill={color} />
         </>
       )
+    default:
+      return null
   }
 }
 
-const KINDS: Exclude<TextureKind, 'none'>[] = ['grain', 'dots', 'lines', 'cross', 'weave']
+const DRAWN: TextureKind[] = ['grain', 'dots', 'lines', 'cross', 'weave']
+const IMAGES: TextureKind[] = Object.keys(IMAGE_TEXTURES) as TextureKind[]
 
 /**
  * Every pattern, defined once per page.
@@ -94,6 +120,7 @@ export function TextureDefs({
   glow?: number
 }) {
   const wanted = textures.filter((t) => t.kind !== 'none')
+  const picture = wanted.find((t) => t.kind === 'image' && t.image && t.fit !== 'cover')
   // A mask is luminance: white keeps, black drops. The end of the ramp is
   // however much of the trail should survive.
   const survives = Math.round((1 - Math.max(0, Math.min(1, fade))) * 255)
@@ -127,7 +154,16 @@ export function TextureDefs({
           </feMerge>
         </filter>
       )}
-      {KINDS.flatMap((kind) =>
+
+      {/* An image tile carries only alpha; these give it its ink. */}
+      {(['light', 'dark'] as const).map((ink) => (
+        <filter key={ink} id={`tex-ink-${ink}`} x="0" y="0" width="100%" height="100%">
+          <feFlood floodColor={ink === 'light' ? LIGHT : DARK} />
+          <feComposite in2="SourceAlpha" operator="in" />
+        </filter>
+      ))}
+
+      {DRAWN.flatMap((kind) =>
         (['light', 'dark'] as const).map((ink) => {
           const use = wanted.find((t) => t.kind === kind && t.ink === ink)
           if (!use) return null
@@ -146,6 +182,48 @@ export function TextureDefs({
         }),
       )}
 
+      {IMAGES.flatMap((kind) =>
+        (['light', 'dark'] as const).map((ink) => {
+          const use = wanted.find((t) => t.kind === kind && t.ink === ink)
+          if (!use) return null
+          return (
+            <pattern
+              key={`${kind}-${ink}`}
+              id={textureId(kind, ink)}
+              width={IMAGE_TILE}
+              height={IMAGE_TILE}
+              patternUnits="userSpaceOnUse"
+              patternTransform={`scale(${use.scale})`}
+            >
+              <image
+                href={textureHref(kind)}
+                width={IMAGE_TILE}
+                height={IMAGE_TILE}
+                filter={`url(#tex-ink-${ink})`}
+                preserveAspectRatio="none"
+              />
+            </pattern>
+          )
+        }),
+      )}
+
+      {picture && (
+        <pattern
+          id={textureId('image', 'dark')}
+          width={PICTURE_TILE}
+          height={PICTURE_TILE}
+          patternUnits="userSpaceOnUse"
+          patternTransform={`scale(${picture.scale})`}
+        >
+          <image
+            href={picture.image}
+            width={PICTURE_TILE}
+            height={PICTURE_TILE}
+            preserveAspectRatio="xMidYMid slice"
+          />
+        </pattern>
+      )}
+
       {/* Ramps a trail's texture from nothing at the head to full at the tail,
           in the trail's own bounding box so one definition serves them all. */}
       <linearGradient id="trail-ramp-grad" x1="0" y1="0" x2="1" y2="0">
@@ -162,9 +240,12 @@ export function TextureDefs({
 
 /**
  * Roughly how many pattern cycles fit across a mark of this height.
- * Under about three, a texture stops reading as one.
+ * Under about three, a drawn texture stops reading as one. Image tiles are
+ * surfaces rather than patterns and never trigger the warning.
  */
 export function cyclesAcross(texture: TextureConfig, markHeight: number): number {
-  if (texture.kind === 'none') return Infinity
+  if (texture.kind === 'none' || texture.kind === 'image' || isImageTexture(texture.kind)) {
+    return Infinity
+  }
   return markHeight / (TILE * Math.max(0.1, texture.scale))
 }

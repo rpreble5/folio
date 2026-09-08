@@ -1830,6 +1830,19 @@ button {
   gap: 14px;
 }
 
+/* The way to bring a picture, and how it sits, on one line. */
+.page-picture {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pill--on {
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(236, 230, 218, 0.45);
+}
+
 .page-swatches {
   display: flex;
   flex-wrap: wrap;

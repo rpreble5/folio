@@ -551,7 +551,25 @@ export const TRAIL_COLORS: { id: TrailColor; label: string }[] = [
 // Texture
 // ---------------------------------------------------------------------------
 
-export type TextureKind = 'none' | 'grain' | 'dots' | 'lines' | 'cross' | 'weave'
+/**
+ * Textures come in three families: drawn patterns, made from a few marks in
+ * a tiny tile; image tiles, seamless rasters bundled with the app (paper,
+ * linen, kraft, chalk, stone) that the page inks in its own colour; and the
+ * reader's own picture, tiled or laid over the page whole.
+ */
+export type TextureKind =
+  | 'none'
+  | 'grain'
+  | 'dots'
+  | 'lines'
+  | 'cross'
+  | 'weave'
+  | 'paper'
+  | 'linen'
+  | 'kraft'
+  | 'chalk'
+  | 'stone'
+  | 'image'
 
 export const TEXTURE_KINDS: { id: TextureKind; label: string }[] = [
   { id: 'none', label: 'None' },
@@ -560,7 +578,25 @@ export const TEXTURE_KINDS: { id: TextureKind; label: string }[] = [
   { id: 'lines', label: 'Hatch' },
   { id: 'cross', label: 'Cross' },
   { id: 'weave', label: 'Weave' },
+  { id: 'paper', label: 'Paper' },
+  { id: 'linen', label: 'Linen' },
+  { id: 'kraft', label: 'Kraft' },
+  { id: 'chalk', label: 'Chalk' },
+  { id: 'stone', label: 'Stone' },
 ]
+
+/** The bundled raster tiles, by kind. */
+export const IMAGE_TEXTURES: Record<string, string> = {
+  paper: 'textures/paper.png',
+  linen: 'textures/linen.png',
+  kraft: 'textures/kraft.png',
+  chalk: 'textures/chalk.png',
+  stone: 'textures/stone.png',
+}
+
+export const isImageTexture = (kind: TextureKind): boolean => kind in IMAGE_TEXTURES
+
+export type TextureFit = 'tile' | 'cover'
 
 export interface TextureConfig {
   kind: TextureKind
@@ -569,6 +605,10 @@ export interface TextureConfig {
   strength: number
   /** Whether the texture lightens or darkens what it sits on. */
   ink: 'light' | 'dark'
+  /** The reader's own picture, as a data URL, when the kind is 'image'. */
+  image?: string
+  /** Whether that picture repeats as a tile or covers the page once. */
+  fit?: TextureFit
 }
 
 export const NO_TEXTURE: TextureConfig = { kind: 'none', scale: 1, strength: 0.3, ink: 'dark' }
