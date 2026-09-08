@@ -39,6 +39,10 @@ interface Props {
   trail: TrailConfig
   texture: TextureConfig
   trailGrain: boolean
+  /** The trail's own colour, when it encodes something the head does not. */
+  trailFill?: string
+  /** 0 to 1: how far the trail fades toward the page by its end. */
+  trailFade?: number
 }
 
 /** Heads drawn at a fixed size, with the duration carried by the trail. */
@@ -159,6 +163,8 @@ export function NoteGlyph({
   trail,
   texture,
   trailGrain,
+  trailFill,
+  trailFade = 0,
 }: Props) {
   const headSize = height
   const half = height / 2
@@ -183,6 +189,14 @@ export function NoteGlyph({
     stroke: strokeWidth > 0 ? stroke : 'none',
     strokeWidth,
   }
+  // The trail may wear its own colour; a hollow note's trail stays hollow in
+  // that colour, and its outline follows suit so the two halves agree.
+  const trailInk = trailFill ?? fill
+  const trailCommon = {
+    ...common,
+    fill: !filled && hollowTint > 0 ? trailInk : filled ? trailInk : 'none',
+    stroke: strokeWidth > 0 ? (trailFill ? trailInk : stroke) : 'none',
+  }
 
   return (
     <g
@@ -190,10 +204,17 @@ export function NoteGlyph({
       opacity={opacity}
       style={selected ? { filter: `drop-shadow(0 0 0 2px ${accent})` } : undefined}
     >
-      {/* Trail first, so the head sits over the shoulder of the swell. */}
+      {/* Trail first, so the head sits over the shoulder of the swell. The
+          fade is a shared mask in the trail's own box, so one definition
+          serves every note and the head — drawn after — stays solid. */}
       {hasTrail && (
         <>
-          <path d={path} {...common} opacity={trail.opacity} />
+          <path
+            d={path}
+            {...trailCommon}
+            opacity={trail.opacity}
+            mask={trailFade > 0 ? 'url(#trail-fade)' : undefined}
+          />
           {pattern && (
             <path
               d={path}

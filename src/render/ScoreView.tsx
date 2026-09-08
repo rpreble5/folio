@@ -170,6 +170,8 @@ export function ScoreView({
     >
       <CvdFilters />
       <TextureDefs
+        fade={theme.encodings.trailFade ?? 0}
+        glow={theme.encodings.glow ?? 0}
         textures={[
           theme.encodings.texture,
           cfg.pageTexture,
@@ -467,8 +469,12 @@ function SystemGroup({
         </g>
       ))}
 
-      {/* Notes */}
-      <g transform={`translate(${layout.gutter}, 0)`}>
+      {/* Notes. The glow is one filter over the whole group rather than one
+          per note: a halo is cheap once and ruinous four hundred times. */}
+      <g
+        transform={`translate(${layout.gutter}, 0)`}
+        filter={(encodings.glow ?? 0) > 0 ? 'url(#glow)' : undefined}
+      >
         {system.notes.map((placed) => {
           const active = activeIds.has(placed.note.id)
           return (
@@ -516,6 +522,8 @@ function SystemGroup({
                 trail={encodings.trail}
                 texture={encodings.texture}
                 trailGrain={encodings.trailGrain}
+                trailFill={placed.style.trailFill}
+                trailFade={encodings.trailFade ?? 0}
               />
               )}
               {/* One label per note, on the head it begins with. A tied note's

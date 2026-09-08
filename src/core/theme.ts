@@ -13,6 +13,7 @@ import { lightnessOf, scaleChroma, shiftLightness, withLightness } from './oklch
 import { ANCHOR_DARK, ANCHOR_LIGHT } from './palettes'
 import {
   type ColorConfig,
+  type ColorSource,
   type ShapeKind,
   buildPalette,
   chromaScale,
@@ -121,6 +122,8 @@ export interface Rule {
 /** Fully resolved, ready to draw. No optionals. */
 export interface ResolvedStyle {
   fill: string
+  /** The trail's colour — the head's, unless the trail encodes something else. */
+  trailFill: string
   stroke: string
   strokeWidth: number
   shape: ShapeKind
@@ -526,6 +529,24 @@ export interface TrailConfig {
   opacity: number
 }
 
+/**
+ * What the trail is coloured by, when not simply the head.
+ *
+ * A note is two marks — a head and a trail — and they need not say the same
+ * thing. Head by pitch and trail by hand is two channels in one shape, with
+ * nothing added to the page. Ink is the quiet option: a neutral trail that
+ * leaves the colour to the head alone.
+ */
+export type TrailColor = 'same' | 'hand' | 'degree' | 'register' | 'ink'
+
+export const TRAIL_COLORS: { id: TrailColor; label: string }[] = [
+  { id: 'same', label: 'Same' },
+  { id: 'hand', label: 'Hand' },
+  { id: 'degree', label: 'Degree' },
+  { id: 'register', label: 'Register' },
+  { id: 'ink', label: 'Ink' },
+]
+
 // ---------------------------------------------------------------------------
 // Texture
 // ---------------------------------------------------------------------------
@@ -596,6 +617,21 @@ export interface Encodings {
    * rather than decorating.
    */
   trailGrain: boolean
+  /** What the trail is coloured by. Absent means the head's own colour. */
+  trailColor?: TrailColor
+  /**
+   * How far the trail fades toward the page by its end, 0 to 1.
+   *
+   * A held note decays; a bar that stays solid to its last pixel says it
+   * does not. The fade is the truer drawing, and it also makes the head —
+   * the moment the note is struck — the brightest thing on the page.
+   */
+  trailFade?: number
+  /**
+   * A soft bloom around every note, 0 to 1. Meant for dark pages, where a
+   * bright mark can afford to spill a little light; on paper it just blurs.
+   */
+  glow?: number
 }
 
 export interface Surface {
@@ -819,6 +855,28 @@ function inkFor(
   }
 }
 
+/** Which palette a two-tone trail draws from. */
+const TRAIL_SOURCES: Record<Exclude<TrailColor, 'same' | 'ink'>, ColorSource> = {
+  hand: 'hands',
+  degree: 'harmony',
+  register: 'register',
+}
+
+/**
+ * The trail's colour: the head's, or a second palette's answer for the same
+ * note. The second palette is the fixed one for that dimension rather than
+ * the user's tuned wheel, so "trail by hand" means the two hand colours
+ * everyone recognises, whatever the heads are doing.
+ */
+function trailFillFor(theme: Theme, note: NoteEvent, key: KeyMark, headFill: string): string {
+  const mode = theme.encodings.trailColor ?? 'same'
+  if (mode === 'same') return headFill
+  if (mode === 'ink') return theme.surface.text
+  const palette = buildPalette({ ...theme.encodings.color, source: TRAIL_SOURCES[mode] })
+  const raw = colorFor(palette, note, key)
+  return raw === '@ink' ? theme.surface.text : raw
+}
+
 export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): ResolvedStyle {
   const palette = buildPalette(theme.encodings.color)
   const shapeSet = getShapeSet(theme.encodings.shapeSet)
@@ -838,6 +896,7 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
 
   const base: ResolvedStyle = {
     fill,
+    trailFill: trailFillFor(theme, note, key, fill),
     // A hollow note carries its colour in the outline instead, so the pitch
     // encoding survives the treatment rather than being spent on it.
     stroke: outlined ? fill : 'transparent',
@@ -881,6 +940,9 @@ export function resolveStyle(note: NoteEvent, theme: Theme, key: KeyMark): Resol
         labelBackdrop(s.fill, base.filled, theme),
         theme.surface,
       )
+    }
+    if (s.fill !== undefined && (theme.encodings.trailColor ?? 'same') === 'same') {
+      base.trailFill = s.fill
     }
     if (s.stroke !== undefined) base.stroke = s.stroke
     if (s.strokeWidth !== undefined) base.strokeWidth = s.strokeWidth

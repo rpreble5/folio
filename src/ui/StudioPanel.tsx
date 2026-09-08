@@ -52,6 +52,7 @@ import {
   engravedSpacing,
   fullNotation,
   TEXTURE_KINDS,
+  TRAIL_COLORS,
   contrastRatio,
   describeSelector,
   makeSurface,
@@ -66,6 +67,7 @@ import {
   type SpacingConfig,
   type TintDir,
   type TextureConfig,
+  type TrailColor,
   type TrailConfig,
 } from '../core/theme'
 import { keyAt } from '../core/types'
@@ -780,8 +782,40 @@ function MarksTab() {
         </div>
       </Group>
 
-      <Group label="Texture">
-        <Field>
+      <Group label="Surface">
+        {/* What the mark wears rather than what it is: the trail as a second
+            channel — what it is coloured by, how it decays — then the bloom
+            and the grain. The head is untouched by the first two. */}
+        <Field name="Trail coloured by">
+          <Pills
+            options={TRAIL_COLORS.map((c) => ({ value: c.id, label: c.label }))}
+            value={theme.encodings.trailColor ?? 'same'}
+            onChange={(trailColor: TrailColor) => patchEncodings({ trailColor })}
+          />
+        </Field>
+        <Range
+          name="Trail fade"
+          display={
+            (theme.encodings.trailFade ?? 0) === 0
+              ? 'Solid'
+              : `${Math.round((theme.encodings.trailFade ?? 0) * 100)}%`
+          }
+          min={0}
+          max={1}
+          step={0.05}
+          value={theme.encodings.trailFade ?? 0}
+          onChange={(trailFade) => patchEncodings({ trailFade })}
+        />
+        <Range
+          name="Glow"
+          display={(theme.encodings.glow ?? 0) === 0 ? 'None' : `${Math.round((theme.encodings.glow ?? 0) * 100)}%`}
+          min={0}
+          max={1}
+          step={0.05}
+          value={theme.encodings.glow ?? 0}
+          onChange={(glow) => patchEncodings({ glow })}
+        />
+        <Field name="Texture">
           <Pills
             options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}
             value={texture.kind}

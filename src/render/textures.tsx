@@ -82,11 +82,51 @@ const KINDS: Exclude<TextureKind, 'none'>[] = ['grain', 'dots', 'lines', 'cross'
  * Scale lives on the pattern rather than on each use, so all three surfaces —
  * page, note, trail — can carry different scales without duplicating tiles.
  */
-export function TextureDefs({ textures }: { textures: TextureConfig[] }) {
+export function TextureDefs({
+  textures,
+  fade = 0,
+  glow = 0,
+}: {
+  textures: TextureConfig[]
+  /** How far a trail fades toward the page by its end, 0 to 1. */
+  fade?: number
+  /** Bloom strength, 0 to 1. */
+  glow?: number
+}) {
   const wanted = textures.filter((t) => t.kind !== 'none')
+  // A mask is luminance: white keeps, black drops. The end of the ramp is
+  // however much of the trail should survive.
+  const survives = Math.round((1 - Math.max(0, Math.min(1, fade))) * 255)
+  const fadeEnd = `rgb(${survives},${survives},${survives})`
 
   return (
     <defs>
+      {fade > 0 && (
+        <>
+          <linearGradient id="trail-fade-grad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#ffffff" />
+            <stop offset="1" stopColor={fadeEnd} />
+          </linearGradient>
+          <mask id="trail-fade" maskContentUnits="objectBoundingBox">
+            <rect width="1" height="1" fill="url(#trail-fade-grad)" />
+          </mask>
+        </>
+      )}
+
+      {/* The bloom: the mark blurred and brightened, under the mark itself.
+          The region is widened so the halo is not clipped at the note's box. */}
+      {glow > 0 && (
+        <filter id="glow" x="-30%" y="-80%" width="160%" height="260%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation={1.5 + glow * 5} />
+          <feComponentTransfer>
+            <feFuncA type="linear" slope={0.6 + glow * 1.2} />
+          </feComponentTransfer>
+          <feMerge>
+            <feMergeNode />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      )}
       {KINDS.flatMap((kind) =>
         (['light', 'dark'] as const).map((ink) => {
           const use = wanted.find((t) => t.kind === kind && t.ink === ink)
