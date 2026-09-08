@@ -21,7 +21,9 @@
   /* Type. Three weights of presence, nothing in between. */
   --ink: #eceef1;
   --ink-2: #99a0a9;
-  --ink-3: #676d76;
+  /* Muted, but not below the 4.5:1 an accessibility app's own chrome must
+     clear — the old value read at about 3:1 against the panel. */
+  --ink-3: #868d96;
 
   /* The single accent: warm off-white. */
   --bone: #ece6da;
@@ -124,63 +126,24 @@ button {
 
 /* --------------------------------------------------------------- shell --- */
 
+/*
+ * The studio is a workbench with a preview, not a page with a settings drawer.
+ *
+ * The score above the panel is a strip: one system, live, enough to see every
+ * change land the moment it is made. The panel takes the rest of the height,
+ * which is what lets every control of a tab sit in view without a scrollbar —
+ * the rule this screen answers to. Reading the whole piece is the Read view's
+ * job, one tap away; the strip only has to show what the style looks like.
+ *
+ * The strip is an absolute height rather than a share, so the panel's room does
+ * not shrink with the window on exactly the screens that need it most.
+ */
 .app {
+  --preview: clamp(120px, 22vh, 280px);
   display: grid;
-  grid-template-rows: auto minmax(0, 57fr) minmax(0, 43fr) auto;
+  grid-template-rows: auto var(--preview) minmax(0, 1fr) auto;
   height: 100%;
   overflow: hidden;
-  transition: grid-template-rows var(--dur) var(--ease);
-}
-
-/* Colour is a workbench rather than a row of settings, so it borrows height
-   from the score — which stays visible, because watching the notes change is
-   the whole point of adjusting them. */
-.app--lab {
-  grid-template-rows: auto minmax(0, 44fr) minmax(0, 56fr) auto;
-}
-
-/*
- * The split has to answer to absolute height, not just to proportion.
- *
- * A share of the screen is the wrong unit for the panel: its contents are a
- * fixed number of pixels tall, so on a shorter laptop the same 43% is simply
- * too few of them and every tab scrolls. The score is a document and scrolls
- * happily; the panel is a set of controls, and a control below the fold may as
- * well not exist. So the panel's share grows as the screen shrinks.
- *
- * Fixed shares rather than sizing to content, because a panel that resized per
- * tab would move the score every time you switched — and the score staying put
- * while you work on it is the point of putting it above.
- */
-@media (max-height: 1000px) {
-  .app {
-    grid-template-rows: auto minmax(0, 48fr) minmax(0, 52fr) auto;
-  }
-  .app--lab {
-    grid-template-rows: auto minmax(0, 38fr) minmax(0, 62fr) auto;
-  }
-}
-
-@media (max-height: 860px) {
-  .app {
-    grid-template-rows: auto minmax(0, 40fr) minmax(0, 60fr) auto;
-  }
-  .app--lab {
-    grid-template-rows: auto minmax(0, 32fr) minmax(0, 68fr) auto;
-  }
-}
-
-/* Below about 800px the two cannot both be satisfied — the panel is given as
-   much as it can take while leaving the score a system to show, and the densest
-   two tabs scroll a little. Crushing the score to nothing to avoid that would
-   cost more than it saves. */
-@media (max-height: 800px) {
-  .app {
-    grid-template-rows: auto minmax(0, 36fr) minmax(0, 64fr) auto;
-  }
-  .app--lab {
-    grid-template-rows: auto minmax(0, 30fr) minmax(0, 70fr) auto;
-  }
 }
 
 .topbar {
@@ -244,10 +207,18 @@ button {
 .stage {
   min-height: 0;
   overflow: auto;
-  padding: 0 var(--gap-lg) var(--gap);
+  padding: 0 var(--gap-lg) 6px;
   display: flex;
   justify-content: center;
   align-items: flex-start;
+}
+
+/* The score scaled to the strip. Its box is set to the scaled size in JS, so
+   the strip scrolls exactly as far as the shrunken page reaches. */
+.stage__fit {
+  transform-origin: top center;
+  flex-shrink: 0;
+  max-width: 100%;
 }
 
 .score {
@@ -314,6 +285,38 @@ button {
   flex: 1;
 }
 
+/* What the open tab is for, in one line, where the eye lands after the tab
+   name. It lives in the tab row's spare width rather than above the controls,
+   so it costs the panel no height. */
+.tabs__blurb {
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+@media (max-width: 1000px) {
+  .tabs__blurb {
+    display: none;
+  }
+}
+
+/*
+ * Groups as cards.
+ *
+ * With the panel given real height, the groups stopped needing to share a
+ * baseline and started needing edges: a set of controls with a border and a
+ * little padding reads as one thing with one name, where the same controls
+ * floating in a column read as a list that happens to have headings.
+ */
+.panel__body .group {
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
 .panel__body {
   min-height: 0;
   overflow-y: auto;
@@ -339,7 +342,7 @@ button {
  */
 @media (max-height: 820px) {
   .panel__body {
-    padding: 12px var(--gap-lg) 14px;
+    padding: 10px var(--gap-lg) 12px;
   }
 
   .group {
@@ -372,7 +375,7 @@ button {
    with real air between them rather than piling up vertically. */
 .columns {
   display: grid;
-  gap: var(--gap-xl);
+  gap: var(--gap);
   align-items: start;
 }
 
@@ -384,11 +387,26 @@ button {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
 }
 
+/* Shape has seven tiles and wants four to a row; Texture is a row of pills. */
+.columns--notes {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.8fr);
+}
+
 /* The preset tiles need room for two across, or they stack one per row and the
    column runs to six. The three groups beside them are short lists. */
+/* Presets get the width for four tiles across, so seven of them are two rows
+   and not three; the two short lists share the last column. */
 .columns--styles {
-  grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr));
-  gap: var(--gap-lg);
+  grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* Two short groups stacked in one column, where side by side they would each
+   be a card of three lines beside a card of ten. */
+.columns__stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
 }
 
 @media (max-width: 1400px) {
@@ -406,10 +424,31 @@ button {
   }
 }
 
-@media (max-width: 1060px) {
+/* A tablet held upright: two columns of everything, with the height to spare. */
+@media (max-width: 900px) {
   .columns--styles,
   .columns--4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Groups as cards, packed a little tighter when the window is short. */
+@media (max-height: 820px) {
+  .panel__body .group {
+    padding: 10px 12px 12px;
+  }
+
+  .tile {
+    padding: 8px;
+    gap: 6px;
+  }
+}
+
+/* Upright, the piece pills no longer fit beside the title; the Library is
+   the way to change piece there. */
+@media (max-width: 900px) {
+  .topbar__pieces {
+    display: none;
   }
 }
 
@@ -423,14 +462,52 @@ button {
 .colour-lab {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.85fr) auto minmax(0, 0.8fr);
-  gap: var(--gap-lg) var(--gap-xl);
+  gap: var(--gap);
   align-items: start;
 }
 
+/* The first column stacks two groups: the sources, and the check on them. */
+/* The wheel, and beneath it the check on the colours it shows — the one place
+   the eye already is when asking whether the palette still reads. */
 .colour-lab__wheel {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.colour-lab__wheel .colour-lab__cvd--wide {
+  align-self: stretch;
+}
+
+/* The sources, and on a small screen the check beneath them. */
+.colour-lab__col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.colour-lab__cvd--narrow {
+  display: none;
+}
+
+/* The source tiles as a two-up grid rather than a wrapping row: a wrapping row
+   in a narrow column fell to one tile per line and six lines. */
+.colour-lab .tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.colour-lab .palette-tile {
+  width: auto;
+  min-width: 0;
+}
+
+.colour-lab .tile__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .colour-lab__list {
@@ -537,18 +614,44 @@ button {
   }
 }
 
-@media (max-width: 1060px) {
+/* A small tablet sideways: four columns still, but all of them flexible — an
+   auto column would grow to the widest row of pills beneath the wheel — and
+   the wheel a size smaller. The hue readout goes, so a row of the list is a
+   swatch, a name and its nudge. */
+@media (max-width: 1100px) {
   .colour-lab {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--gap-lg);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 14px;
   }
 
-  .colour-lab__list {
-    grid-column: 1 / -1;
+  /* Specific enough to beat the short-screen size below. */
+  .colour-lab__wheel .wheel {
+    width: 160px;
+    height: 160px;
+  }
+
+  .note-row__hue {
+    display: none;
+  }
+
+  .colour-lab__cvd--wide {
+    display: none;
+  }
+
+  .colour-lab__cvd--narrow {
+    display: block;
+  }
+}
+
+/* Upright: sources beside scheme, then the wheel beside its list. */
+@media (max-width: 900px) {
+  .colour-lab {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap);
   }
 
   .note-rows {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
@@ -1192,10 +1295,13 @@ button {
 }
 
 /* The live palette readout, shown larger than the picker thumbnails. */
+/* Given a width of its own: as a centred flex child its swatches, which size
+   by flex alone, collapsed to a single sliver that read as a stray pill. */
 .tile__swatches--tall {
   padding: 5px;
   border-radius: 7px;
   gap: 2px;
+  width: min(100%, 300px);
 }
 
 .tile__swatches--tall i {
@@ -1672,13 +1778,15 @@ button {
 
 /* ----------------------------------------------------------- responsive --- */
 
-@media (max-width: 1000px) {
+@media (max-width: 900px) {
   .columns--3,
-  .columns--2 {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--gap-lg);
+  .columns--2,
+  .columns--notes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
+@media (max-width: 1000px) {
   .topbar,
   .stage,
   .tabs,
@@ -1814,7 +1922,14 @@ button {
 
 @media (max-width: 1100px) {
   .columns--staff {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 900px) {
+  .columns--staff {
     grid-template-columns: auto repeat(2, minmax(0, 1fr));
+    gap: var(--gap);
   }
 }
 

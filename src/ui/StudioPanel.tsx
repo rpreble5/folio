@@ -75,27 +75,34 @@ import { Field, Group, Pills, Range, ShapeMark, Swatches, Switch, Tile } from '.
 type Tab = StudioTab
 
 /**
- * Seven tabs, which is more than the three this started with and deliberately so.
+ * Eight tabs, each one question, in the order the questions get asked.
  *
- * The panel is a fixed strip under the score — wide and only a few hundred
- * pixels tall — so a tab that outgrows it does not get taller, it gets a
- * scrollbar, and a control that has to be scrolled to is a control nobody
- * finds. Labels alone had grown to three times the panel's height. Splitting
- * costs a click; scrolling costs the discovery.
+ * Start from what; what kind of page; (for a staff) how much printed notation;
+ * which colours; which notes come forward; what the marks look like; what they
+ * say; what the lines under them look like. Every control a tab holds is in
+ * view at once — the panel has the height for it now — and a tab that outgrows
+ * that would be split, never scrolled, because a control below the fold is a
+ * control nobody finds.
  *
  * The split is by *question*, not by object: Emphasis is everything that
  * decides which notes come forward and which recede, whichever visual property
- * does it.
+ * does it, and Form holds the page's spacing beside its size because both are
+ * answers to "what kind of page is this".
  */
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'styles', label: 'Styles' },
-  { id: 'colour', label: 'Colour' },
-  { id: 'emphasis', label: 'Emphasis' },
-  { id: 'marks', label: 'Marks' },
-  { id: 'labels', label: 'Labels' },
-  { id: 'staff', label: 'Staff' },
-  { id: 'notation', label: 'Notation' },
-  { id: 'page', label: 'Page' },
+const TABS: { id: Tab; label: string; blurb: string; staffOnly?: boolean }[] = [
+  { id: 'styles', label: 'Style', blurb: 'Start from a preset, pick a page, keep what you make.' },
+  { id: 'page', label: 'Form', blurb: 'Roll or staff, how big, how spaced, what furniture.' },
+  {
+    id: 'notation',
+    label: 'Notation',
+    blurb: 'How much of a printed page to draw, piece by piece.',
+    staffOnly: true,
+  },
+  { id: 'colour', label: 'Colour', blurb: 'Which colour each note gets, and whether it still reads.' },
+  { id: 'emphasis', label: 'Emphasis', blurb: 'Which notes come forward and which sit back.' },
+  { id: 'marks', label: 'Notes', blurb: 'The shape of a note, its trail, its surface.' },
+  { id: 'labels', label: 'Labels', blurb: 'Letters on the notes — to learn from, then leave behind.' },
+  { id: 'staff', label: 'Lines', blurb: 'The staff and the lines beneath the music.' },
 ]
 
 /**
@@ -126,22 +133,31 @@ export function StudioPanel() {
   const setTab = useStore((s) => s.setStudioTab)
   const dirty = useStore((s) => s.dirty)
   const ruleCount = useStore((s) => s.theme.rules.length)
+  const isStaff = useStore((s) => s.theme.layout.mode === 'staff')
+
+  // Printed notation is a staff's business: on a roll the tab has nothing to
+  // draw, so it is not offered — and a reader switching to a roll while on it
+  // is put back on Form, where the switch they just used lives.
+  const tabs = TABS.filter((t) => !t.staffOnly || isStaff)
+  const shown = tabs.some((t) => t.id === tab) ? tab : 'page'
+  const current = TABS.find((t) => t.id === shown)
 
   return (
     <section className="panel" aria-label="Style studio">
       <div className="tabs" role="tablist">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             className="tab"
             role="tab"
-            aria-selected={tab === t.id}
+            aria-selected={shown === t.id}
             onClick={() => setTab(t.id)}
           >
             {t.label}
           </button>
         ))}
         <div className="tabs__spacer" />
+        <span className="tabs__blurb">{current?.blurb}</span>
         {(dirty || ruleCount > 0) && (
           <span className="field__value">
             {ruleCount > 0
@@ -152,15 +168,15 @@ export function StudioPanel() {
       </div>
 
       {/* Keyed so switching tabs replays the entrance transition. */}
-      <div className="panel__body" role="tabpanel" key={tab}>
-        {tab === 'styles' && <StylesTab />}
-        {tab === 'colour' && <ColourTab />}
-        {tab === 'emphasis' && <EmphasisTab />}
-        {tab === 'marks' && <MarksTab />}
-        {tab === 'labels' && <LabelsTab />}
-        {tab === 'staff' && <StaffTab />}
-        {tab === 'notation' && <NotationTab />}
-        {tab === 'page' && <PageTab />}
+      <div className="panel__body" role="tabpanel" key={shown}>
+        {shown === 'styles' && <StylesTab />}
+        {shown === 'colour' && <ColourTab />}
+        {shown === 'emphasis' && <EmphasisTab />}
+        {shown === 'marks' && <MarksTab />}
+        {shown === 'labels' && <LabelsTab />}
+        {shown === 'staff' && <StaffTab />}
+        {shown === 'notation' && <NotationTab />}
+        {shown === 'page' && <FormTab />}
       </div>
     </section>
   )
@@ -172,14 +188,15 @@ function StylesTab() {
   const theme = useStore((s) => s.theme)
   const basePresetId = useStore((s) => s.basePresetId)
   const customThemes = useStore((s) => s.customThemes)
-  const cvd = useStore((s) => s.cvd)
   const applyPreset = useStore((s) => s.applyPreset)
   const applyTheme = useStore((s) => s.applyTheme)
   const deleteCustomTheme = useStore((s) => s.deleteCustomTheme)
   const saveCurrentTheme = useStore((s) => s.saveCurrentTheme)
   const removeRule = useStore((s) => s.removeRule)
   const clearRules = useStore((s) => s.clearRules)
-  const setCvd = useStore((s) => s.setCvd)
+  const setPage = useStore((s) => s.setPage)
+  const patchLayout = useStore((s) => s.patchLayout)
+  const { layout } = theme
   const [name, setName] = useState('')
 
   const save = () => {
@@ -190,9 +207,8 @@ function StylesTab() {
 
   return (
     <div className="columns columns--styles">
-      {/* Four columns rather a preset row above a group row: stacking made
-          Styles the one tab whose height was the sum of two things instead of
-          the tallest of several, which is what pushed it past the panel. */}
+      {/* Presets, then the page they sit on, then what you have kept: the
+          three decisions that set a style's whole mood, before any dial. */}
       <Group label="Start from">
         <div className="tiles">
           {PRESETS.map((preset) => {
@@ -214,19 +230,69 @@ function StylesTab() {
         </div>
       </Group>
 
-      <Group label="Check your colours">
-          <Pills
-            options={CVD_MODES.map((m) => ({ value: m.id, label: m.label }))}
-            value={cvd}
-            onChange={(mode) => setCvd(mode as CvdMode)}
-          />
-          <p className="note-text">
-            {cvd === 'none'
-              ? 'Simulate colour vision deficiency to see whether your palette still reads. Around one man in twelve has some form of it.'
-              : 'If two notes you need to tell apart now look alike, add a shape or a label rather than hunting for another hue.'}
-          </p>
-        </Group>
+      <Group label="Page">
+        {/* Swatches, not labelled tiles. A page colour is a colour — the name
+            under it cost a row each and told you nothing the swatch did not.
+            Each still previews its derived grid and ink, since those follow. */}
+        <div className="page-swatches">
+          {PAGES.map((page) => (
+            <button
+              key={page.id}
+              className="page-swatch"
+              style={{ background: page.color }}
+              aria-pressed={theme.surface.background.toLowerCase() === page.color.toLowerCase()}
+              onClick={() => setPage(page.color)}
+              title={page.name}
+            >
+              <i
+                style={{
+                  background: makeSurface(page.color).gridStrong,
+                  width: 11,
+                  height: 3,
+                  borderRadius: 2,
+                  display: 'block',
+                }}
+              />
+              <i
+                style={{
+                  background: makeSurface(page.color).text,
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  display: 'block',
+                }}
+              />
+            </button>
+          ))}
+        </div>
 
+        {/* Page grain wants a coarser scale than the notes, or the two compete
+            for the same channel and the page wins by sheer area. */}
+        <Field name="Texture">
+          <Pills
+            options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}
+            value={layout.pageTexture.kind}
+            onChange={(kind) =>
+              patchLayout({ pageTexture: { ...layout.pageTexture, kind } })
+            }
+          />
+        </Field>
+        {layout.pageTexture.kind !== 'none' && (
+          <Range
+            name="Grain strength"
+            display={`${Math.round(layout.pageTexture.strength * 100)}%`}
+            min={0.02}
+            max={0.3}
+            step={0.02}
+            value={layout.pageTexture.strength}
+            onChange={(strength) =>
+              patchLayout({ pageTexture: { ...layout.pageTexture, strength } })
+            }
+          />
+        )}
+      </Group>
+
+      <div className="columns__stack">
         <Group label="Your overrides">
           {theme.rules.length === 0 ? (
             <p className="empty">
@@ -305,6 +371,7 @@ function StylesTab() {
           Save
         </button>
       </Group>
+      </div>
     </div>
   )
 }
@@ -314,6 +381,8 @@ function StylesTab() {
 function ColourTab() {
   const theme = useStore((s) => s.theme)
   const patchEncodings = useStore((s) => s.patchEncodings)
+  const cvd = useStore((s) => s.cvd)
+  const setCvd = useStore((s) => s.setCvd)
   const color = theme.encodings.color
   const palette = buildPalette(color)
   const source = COLOR_SOURCES.find((s) => s.id === color.source)
@@ -363,7 +432,8 @@ function ColourTab() {
 
   return (
     <div className="colour-lab">
-      <Group label="Colour by">
+      <div className="colour-lab__col">
+        <Group label="Colour by">
           <div className="tiles">
             {COLOR_SOURCES.map((s) => (
               <Tile
@@ -380,10 +450,15 @@ function ColourTab() {
                   surface={theme.surface}
                 />
                 <div className="tile__name">{s.name}</div>
-            </Tile>
-          ))}
-        </div>
-      </Group>
+              </Tile>
+            ))}
+          </div>
+        </Group>
+        {/* On a small screen the check moves under the sources, in short
+            form: the wheel's column has no height to spare there. Which of
+            the two copies shows is the stylesheet's decision, by width. */}
+        <CvdCheck cvd={cvd} onChange={setCvd} className="colour-lab__cvd--narrow" compact />
+      </div>
 
       {tunable && (
         <Group label="Scheme">
@@ -470,6 +545,7 @@ function ColourTab() {
               onShift={setShift}
               onRotate={(rotate) => patchColor({ rotate })}
             />
+            <CvdCheck cvd={cvd} onChange={setCvd} className="colour-lab__cvd--wide" />
           </div>
 
           <div className="colour-lab__list">
@@ -543,11 +619,62 @@ function ColourTab() {
       ) : (
         <div className="colour-lab__wheel">
           <Strip colors={palette.colors} surface={theme.surface} tall />
-          <p className="note-text" style={{ marginTop: 16 }}>
+          <p className="note-text">
             {source?.note} Order, tone and the wheel apply to pitch colours only.
           </p>
+          <CvdCheck cvd={cvd} onChange={setCvd} className="colour-lab__cvd--wide" />
         </div>
       )}
+    </div>
+  )
+}
+
+/** Short names for the simulator on a screen with no room for the long ones. */
+const CVD_SHORT: Record<string, string> = {
+  none: 'Normal',
+  greyscale: 'Greys',
+  protanopia: 'Protan',
+  deuteranopia: 'Deutan',
+  tritanopia: 'Tritan',
+}
+
+/**
+ * The colour-blindness simulator, under the colours it checks.
+ *
+ * It used to live on the presets tab; the question it answers — does this
+ * palette still read? — is asked while choosing the palette, so it sits where
+ * the palette is.
+ */
+function CvdCheck({
+  cvd,
+  onChange,
+  className,
+  compact = false,
+}: {
+  cvd: CvdMode
+  onChange(mode: CvdMode): void
+  className?: string
+  compact?: boolean
+}) {
+  return (
+    <div className={className}>
+      <Group label="Check your colours">
+        <Pills
+          options={CVD_MODES.map((m) => ({
+            value: m.id,
+            label: compact ? CVD_SHORT[m.id] ?? m.label : m.label,
+          }))}
+          value={cvd}
+          onChange={(mode) => onChange(mode as CvdMode)}
+        />
+        {!compact && (
+          <p className="note-text">
+            {cvd === 'none'
+              ? 'Simulate colour vision deficiency to see whether your palette still reads. Around one man in twelve has some form of it.'
+              : 'If two notes you need to tell apart now look alike, add a shape or a label rather than hunting for another hue.'}
+          </p>
+        )}
+      </Group>
     </div>
   )
 }
@@ -573,7 +700,7 @@ function MarksTab() {
   const tooFine = texture.kind !== 'none' && cycles < 2.2
 
   return (
-    <div className="columns columns--3">
+    <div className="columns columns--notes">
       <Group label="Shape">
         <div className="tiles">
           {SHAPE_SETS.map((set) => (
@@ -947,18 +1074,12 @@ function LabelsTab() {
             onChange={(labelOn: LabelOn) => patchEncodings({ labelOn })}
           />
         </Field>
-        <Field name="Case">
-          <Pills
-            options={[
-              { value: 'as-is', label: 'As is' },
-              { value: 'upper', label: 'UPPER' },
-              { value: 'lower', label: 'lower' },
-            ]}
-            value={encodings.labelCase}
-            onChange={(labelCase) => patchEncodings({ labelCase })}
-          />
-        </Field>
-        <Field name="Weaning">
+      </Group>
+
+      {/* Its own card: weaning is the point of the labels, and the one control
+          here that is about the reader rather than the typography. */}
+      <Group label="Weaning">
+        <Field name="Over time">
           <Pills
             fill
             options={[
@@ -969,14 +1090,11 @@ function LabelsTab() {
             onChange={(v) => patchEncodings({ labelWean: v === 'on' })}
           />
         </Field>
-        {encodings.labelWean && (
-          <p className="note-text">
-            Letters fade on the notes your practice record shows you read quickly
-            and cleanly, then disappear — and come back if a note starts going
-            wrong or has not been seen for a fortnight. The record lives on this
-            device only.
-          </p>
-        )}
+        <p className="note-text">
+          {encodings.labelWean
+            ? 'Letters fade on the notes your practice record shows you read quickly and cleanly, then disappear — and come back if a note starts going wrong or has not been seen for a fortnight. The record lives on this device only.'
+            : 'Let the practice record take the letters away as each note becomes fluent — the labels are here to be learnt from, then left behind.'}
+        </p>
       </Group>
 
       <Group label="Colour">
@@ -1060,12 +1178,20 @@ function LabelsTab() {
         {encodings.labelPlace === 'inside' && noteHeight < 13 && (
           <p className="note-text warn">
             At this note height a label inside will be cramped. Try Above, or raise the note
-            height on the Page tab.
+            height on the Form tab.
           </p>
         )}
-      </Group>
-
-      <Group label="Size">
+        <Field name="Case">
+          <Pills
+            options={[
+              { value: 'as-is', label: 'As is' },
+              { value: 'upper', label: 'UPPER' },
+              { value: 'lower', label: 'lower' },
+            ]}
+            value={encodings.labelCase}
+            onChange={(labelCase) => patchEncodings({ labelCase })}
+          />
+        </Field>
         <div className="slider-pair">
           <Range
         name="Size"
@@ -1287,13 +1413,11 @@ function StaffTab() {
 /**
  * Notation: how much of a printed page to draw.
  *
- * Its own tab because it is its own question, and a large one — ten switches and
- * four weights would have pushed the Page tab into a scrollbar, and a control
- * that has to be scrolled to is a control nobody finds.
- *
- * Ordered by how much each piece changes the page. Spacing first, because it
- * decides whether this is a printed bar or a piano roll at all; then the marks
- * that carry rhythm; then the ones that carry pitch; then weights.
+ * Offered only for a staff, because on a roll there is nothing here to draw.
+ * Ordered by how much each piece changes the page: the marks that carry
+ * rhythm, then the ones that carry pitch, then the weights of the ink, then
+ * the room the engraver leaves around it. Spacing itself lives on Form, since
+ * it shapes the page whether or not any of this is drawn on it.
  */
 function NotationTab() {
   const theme = useStore((s) => s.theme)
@@ -1313,66 +1437,6 @@ function NotationTab() {
 
   return (
     <div className="columns columns--4">
-      <Group label="Spacing">
-        <Field name="Width means">
-          <Pills
-            fill
-            options={[
-              { value: 'duration', label: 'Duration' },
-              { value: 'engraved', label: 'Engraved' },
-            ]}
-            value={spacing ? 'engraved' : 'duration'}
-            onChange={(kind) =>
-              patchLayout({ spacing: kind === 'engraved' ? engravedSpacing() : undefined })
-            }
-          />
-        </Field>
-
-        {spacing ? (
-          <>
-            {/* Power is the one that changes everything, so it gets its own row
-                and reads out what it currently means rather than a bare number. */}
-            <Range
-              name="Duration weight"
-              display={spacingName(spacing.power)}
-              min={0}
-              max={100}
-              value={Math.round(spacing.power * 100)}
-              onChange={(v) => patchSpacing({ power: v / 100 })}
-            />
-            <div className="slider-pair">
-              <Range
-                name="Justify"
-                display={spacing.justify === 0 ? 'Ragged' : `${Math.round(spacing.justify * 100)}%`}
-                min={0}
-                max={100}
-                value={Math.round(spacing.justify * 100)}
-                onChange={(v) => patchSpacing({ justify: v / 100 })}
-              />
-              <Range
-                name="Beat width"
-                display={`${spacing.unit}`}
-                min={10}
-                max={90}
-                value={spacing.unit}
-                onChange={(unit) => patchSpacing({ unit })}
-              />
-            </div>
-            <p className="note-text">
-              At 100 a note's width <em>is</em> its length — the roll's rule. Engraving
-              sits near 53: a whole note earns more room than a quarter, nowhere near
-              four times as much.
-            </p>
-          </>
-        ) : (
-          <p className="note-text">
-            Every note is as wide as it is long, so a held note is visibly held. The
-            honest choice while you are still learning to read rhythm — but it is not
-            how printed music spaces a bar.
-          </p>
-        )}
-      </Group>
-
       <Group label="Rhythm">
         <Field name="Draw">
           <Pills
@@ -1460,12 +1524,44 @@ function NotationTab() {
         </Group>
       )}
 
-      {/* The rods live here rather than under Spacing: they are the fixed widths
-          glyphs need, so they belong beside the glyph weights, and Spacing stays
-          the two controls that actually change how a bar reads. */}
-      <Group label="Fine tuning">
-        <div className="slider-pair">
-          {spacing && (
+      {notation && (
+        <Group label="Ink">
+          <Range
+            name="Stem weight"
+            display={notation.weight.toFixed(2)}
+            min={4}
+            max={40}
+            value={Math.round(notation.weight * 100)}
+            onChange={(v) => patchNotation({ weight: v / 100 })}
+          />
+          <Range
+            name="Beam weight"
+            display={notation.beamWeight.toFixed(2)}
+            min={10}
+            max={110}
+            value={Math.round(notation.beamWeight * 100)}
+            onChange={(v) => patchNotation({ beamWeight: v / 100 })}
+          />
+          <Range
+            name="Furniture opacity"
+            display={`${Math.round(notation.opacity * 100)}%`}
+            min={10}
+            max={100}
+            value={Math.round(notation.opacity * 100)}
+            onChange={(v) => patchNotation({ opacity: v / 100 })}
+          />
+          <p className="note-text">
+            In staff spaces, so they hold at any staff size. Engraving uses 0.12 for
+            a stem and 0.50 for a beam.
+          </p>
+        </Group>
+      )}
+
+      {/* The rods: the fixed widths glyphs need around them. Only with engraved
+          spacing, because a duration-spaced page has no engraver to leave room. */}
+      {notation && (
+        <Group label="Room">
+          {spacing ? (
             <>
               <Range
                 name="Crowding"
@@ -1500,55 +1596,40 @@ function NotationTab() {
                 onChange={(v) => patchSpacing({ prefix: v / 10 })}
               />
             </>
+          ) : (
+            <p className="note-text">
+              Room around accidentals and dots is the engraver's to give. Set Width
+              means to Engraved on the Form tab to adjust it.
+            </p>
           )}
-          {notation && (
-            <>
-            <Range
-              name="Stem weight"
-              display={notation.weight.toFixed(2)}
-              min={4}
-              max={40}
-              value={Math.round(notation.weight * 100)}
-              onChange={(v) => patchNotation({ weight: v / 100 })}
-            />
-            <Range
-              name="Beam weight"
-              display={notation.beamWeight.toFixed(2)}
-              min={10}
-              max={110}
-              value={Math.round(notation.beamWeight * 100)}
-              onChange={(v) => patchNotation({ beamWeight: v / 100 })}
-            />
-            <Range
-              name="Furniture opacity"
-              display={`${Math.round(notation.opacity * 100)}%`}
-              min={10}
-              max={100}
-              value={Math.round(notation.opacity * 100)}
-              onChange={(v) => patchNotation({ opacity: v / 100 })}
-            />
-            </>
-          )}
-        </div>
-        <p className="note-text">
-          All in staff spaces, so they hold at any staff size. Engraving uses 0.12 for a
-          stem and 0.50 for a beam.
-        </p>
-      </Group>
+        </Group>
+      )}
     </div>
   )
 }
 
 
-function PageTab() {
+/**
+ * Form: what kind of page this is.
+ *
+ * The first choice on it is the biggest one in the studio — roll or staff —
+ * and it was buried on a tab called Page under a heading called Form, which is
+ * why the tab is now called Form and the choice is its first control. Size and
+ * spacing sit beside it because they are the same question asked in numbers.
+ */
+function FormTab() {
   const theme = useStore((s) => s.theme)
   const patchLayout = useStore((s) => s.patchLayout)
-  const setPage = useStore((s) => s.setPage)
   const { layout } = theme
   const isRoll = layout.mode === 'roll'
+  const spacing = layout.spacing
+  const patchSpacing = (patch: Partial<SpacingConfig>) => {
+    if (!spacing) return
+    patchLayout({ spacing: { ...spacing, ...patch } })
+  }
 
   return (
-    <div className="columns columns--3">
+    <div className="columns columns--4">
       <Group label="Form">
         <Field name="Notation">
           <Pills
@@ -1592,99 +1673,98 @@ function PageTab() {
             />
           </Field>
         )}
-
-        {/* Three numbers that are read together — bars per line sets the scale
-            everything else is measured against — so they share a grid rather
-            than running the column past the panel's height. */}
-        <div className="slider-pair">
-          <Range
-        name="Note height"
-        display={`${layout.laneHeight}`}
-        min={7}
-        max={26}
-        value={layout.laneHeight}
-        onChange={(laneHeight) => patchLayout({ laneHeight })}
-      />
-          <Range
-        name="Bars per line"
-        display={layout.barsPerSystem > 0 ? `${layout.barsPerSystem}` : 'Auto'}
-        min={0}
-        max={12}
-        value={layout.barsPerSystem}
-        onChange={(barsPerSystem) => patchLayout({ barsPerSystem })}
-      />
-          <Range
-        name="Between lines"
-        display={`${layout.systemGap}`}
-        min={16}
-        max={110}
-        value={layout.systemGap}
-        onChange={(systemGap) => patchLayout({ systemGap })}
-      />
-        </div>
+        <p className="note-text">
+          {isRoll
+            ? 'Every note a bar on a keyboard grid: pitch is height, length is length. Nothing to decode.'
+            : 'The printed page, drawn in your colours. The Notation tab decides how much of it appears.'}
+        </p>
       </Group>
 
-      <Group label="Page">
-        {/* Swatches, not labelled tiles. A page colour is a colour — the name
-            under it cost a row each and told you nothing the swatch did not.
-            Each still previews its derived grid and ink, since those follow. */}
-        <div className="page-swatches">
-          {PAGES.map((page) => (
-            <button
-              key={page.id}
-              className="page-swatch"
-              style={{ background: page.color }}
-              aria-pressed={theme.surface.background.toLowerCase() === page.color.toLowerCase()}
-              onClick={() => setPage(page.color)}
-              title={page.name}
-            >
-              <i
-                style={{
-                  background: makeSurface(page.color).gridStrong,
-                  width: 11,
-                  height: 3,
-                  borderRadius: 2,
-                  display: 'block',
-                }}
-              />
-              <i
-                style={{
-                  background: makeSurface(page.color).text,
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  display: 'block',
-                }}
-              />
-            </button>
-          ))}
-        </div>
+      <Group label="Size">
+        {/* Three numbers read together — bars per line sets the scale
+            everything else is measured against. */}
+        <Range
+          name="Note height"
+          display={`${layout.laneHeight}`}
+          min={7}
+          max={26}
+          value={layout.laneHeight}
+          onChange={(laneHeight) => patchLayout({ laneHeight })}
+        />
+        <Range
+          name="Bars per line"
+          display={layout.barsPerSystem > 0 ? `${layout.barsPerSystem}` : 'Auto'}
+          min={0}
+          max={12}
+          value={layout.barsPerSystem}
+          onChange={(barsPerSystem) => patchLayout({ barsPerSystem })}
+        />
+        <Range
+          name="Between lines"
+          display={`${layout.systemGap}`}
+          min={16}
+          max={110}
+          value={layout.systemGap}
+          onChange={(systemGap) => patchLayout({ systemGap })}
+        />
+      </Group>
 
-        {/* Page grain wants a coarser scale than the notes, or the two compete
-            for the same channel and the page wins by sheer area. */}
-        <Field name="Page texture">
+      <Group label="Spacing">
+        <Field name="Width means">
           <Pills
-            options={TEXTURE_KINDS.map((t) => ({ value: t.id, label: t.label }))}
-            value={layout.pageTexture.kind}
+            fill
+            options={[
+              { value: 'duration', label: 'Duration' },
+              { value: 'engraved', label: 'Engraved' },
+            ]}
+            value={spacing ? 'engraved' : 'duration'}
             onChange={(kind) =>
-              patchLayout({ pageTexture: { ...layout.pageTexture, kind } })
+              patchLayout({ spacing: kind === 'engraved' ? engravedSpacing() : undefined })
             }
           />
         </Field>
-        {layout.pageTexture.kind !== 'none' && (
-          <Range
-            name="Grain strength"
-            display={`${Math.round(layout.pageTexture.strength * 100)}%`}
-            min={0.02}
-            max={0.3}
-            step={0.02}
-            value={layout.pageTexture.strength}
-            onChange={(strength) =>
-              patchLayout({ pageTexture: { ...layout.pageTexture, strength } })
-            }
-          />
-        )}
 
+        {spacing ? (
+          <>
+            {/* Power is the one that changes everything, so it reads out what it
+                currently means rather than a bare number. */}
+            <Range
+              name="Duration weight"
+              display={spacingName(spacing.power)}
+              min={0}
+              max={100}
+              value={Math.round(spacing.power * 100)}
+              onChange={(v) => patchSpacing({ power: v / 100 })}
+            />
+            <Range
+              name="Justify"
+              display={spacing.justify === 0 ? 'Ragged' : `${Math.round(spacing.justify * 100)}%`}
+              min={0}
+              max={100}
+              value={Math.round(spacing.justify * 100)}
+              onChange={(v) => patchSpacing({ justify: v / 100 })}
+            />
+            <Range
+              name="Beat width"
+              display={`${spacing.unit}`}
+              min={10}
+              max={90}
+              value={spacing.unit}
+              onChange={(unit) => patchSpacing({ unit })}
+            />
+            <p className="note-text">
+              At 100 a note's width <em>is</em> its length — the roll's rule. Engraving
+              sits near 53: a whole note earns more room than a quarter, nowhere near
+              four times as much.
+            </p>
+          </>
+        ) : (
+          <p className="note-text">
+            Every note is as wide as it is long, so a held note is visibly held. The
+            honest choice while you are still learning to read rhythm — but it is not
+            how printed music spaces a bar.
+          </p>
+        )}
       </Group>
 
       <Group label="Show">

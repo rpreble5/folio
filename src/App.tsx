@@ -38,7 +38,6 @@ export default function App() {
   const tempoScale = useStore((s) => s.tempoScale)
   const selectedNoteId = useStore((s) => s.selectedNoteId)
   const cvd = useStore((s) => s.cvd)
-  const studioTab = useStore((s) => s.studioTab)
   const toast = useStore((s) => s.toast)
 
   const setScreen = useStore((s) => s.setScreen)
@@ -52,13 +51,17 @@ export default function App() {
   const stageRef = useRef<HTMLDivElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [stageWidth, setStageWidth] = useState(900)
+  const [stageHeight, setStageHeight] = useState(240)
   const [popover, setPopover] = useState<{ x: number; y: number } | null>(null)
 
   // --- Measure the stage so layout wraps to the real width -----------------
   useLayoutEffect(() => {
     const element = stageRef.current
     if (!element) return
-    const observer = new ResizeObserver(([entry]) => setStageWidth(entry.contentRect.width))
+    const observer = new ResizeObserver(([entry]) => {
+      setStageWidth(entry.contentRect.width)
+      setStageHeight(entry.contentRect.height)
+    })
     observer.observe(element)
     setStageWidth(element.clientWidth)
     return () => observer.disconnect()
@@ -68,6 +71,19 @@ export default function App() {
     () => layoutScore(score, theme, stageWidth),
     [score, theme, stageWidth],
   )
+
+  /**
+   * The preview strip shows one whole system, scaled to fit.
+   *
+   * Laid out at the stage's real width — the same wrapping the Read view will
+   * use — and then shrunk until the first system fits the strip's height, so
+   * what is in view is a complete line of music rather than the top of one.
+   * Never enlarged: a strip taller than a system shows the next system too.
+   */
+  const first = layout.systems[0]
+  const fit = first
+    ? Math.min(1, Math.max(0.35, (stageHeight - 6) / (first.top + first.height)))
+    : 1
 
   // --- Playback ------------------------------------------------------------
   useEffect(() => {
@@ -134,11 +150,13 @@ export default function App() {
     )
     if (!system) return
     const stage = stageRef.current
-    const bottom = system.top + system.height
-    if (bottom > stage.scrollTop + stage.clientHeight - 24 || system.top < stage.scrollTop) {
-      stage.scrollTo({ top: Math.max(0, system.top - 40), behavior: 'smooth' })
+    // In the preview's scaled coordinates, since that is what scrolls.
+    const bottom = (system.top + system.height) * fit
+    const top = system.top * fit
+    if (bottom > stage.scrollTop + stage.clientHeight - 6 || top < stage.scrollTop) {
+      stage.scrollTo({ top: Math.max(0, top - 4), behavior: 'smooth' })
     }
-  }, [playing, playheadBeat, layout])
+  }, [playing, playheadBeat, layout, fit])
 
   // --- Keyboard ------------------------------------------------------------
   useEffect(() => {
@@ -218,13 +236,8 @@ export default function App() {
   if (screen === 'read') return <ReadView />
   if (screen === 'practice') return <PracticeView />
 
-  // Two tabs are workbenches rather than rows of settings — the hue wheel and
-  // the staff editor are both things you look *at* while dragging — so they
-  // borrow height from the score, which stays visible either way.
-  const lab = studioTab === 'colour' || studioTab === 'staff'
-
   return (
-    <div className={lab ? 'app app--lab' : 'app'}>
+    <div className="app">
       <header className="topbar">
         <button className="wordmark" onClick={() => setScreen('library')}>
           <span className="wordmark__dot" />
@@ -238,17 +251,19 @@ export default function App() {
 
         <div className="topbar__spacer" />
 
-        <Pills
-          options={LIBRARY.map(({ score: piece }) => ({
-            value: piece.id,
-            label: piece.title,
-          }))}
-          value={score.id}
-          onChange={(id) => {
-            const entry = LIBRARY.find((e) => e.score.id === id)
-            if (entry) loadScore(entry.score)
-          }}
-        />
+        <div className="topbar__pieces">
+          <Pills
+            options={LIBRARY.map(({ score: piece }) => ({
+              value: piece.id,
+              label: piece.title,
+            }))}
+            value={score.id}
+            onChange={(id) => {
+              const entry = LIBRARY.find((e) => e.score.id === id)
+              if (entry) loadScore(entry.score)
+            }}
+          />
+        </div>
 
         <button className="pill pill--solid" onClick={() => fileInput.current?.click()}>
           Import
@@ -286,17 +301,26 @@ export default function App() {
       </header>
 
       <div className="stage" ref={stageRef} onClick={() => handleSelectNote(null)}>
-        <ScoreView
-          score={score}
-          theme={theme}
-          layout={layout}
-          playheadBeat={playheadBeat}
-          playing={playing}
-          activeIds={activeIds}
-          selectedId={selectedNoteId}
-          cvd={cvd}
-          onSelectNote={handleSelectNote}
-        />
+        <div
+          className="stage__fit"
+          style={{
+            transform: `scale(${fit})`,
+            width: layout.width,
+            height: layout.height * fit,
+          }}
+        >
+          <ScoreView
+            score={score}
+            theme={theme}
+            layout={layout}
+            playheadBeat={playheadBeat}
+            playing={playing}
+            activeIds={activeIds}
+            selectedId={selectedNoteId}
+            cvd={cvd}
+            onSelectNote={handleSelectNote}
+          />
+        </div>
       </div>
 
       <StudioPanel />
